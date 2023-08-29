@@ -1,6 +1,12 @@
-# c语言知识记录
+# c语言系统开发
 
 ## 李慧琴linux嵌入式C语言编程
+
+- [ ] 谁打开谁关闭
+- [ ] 谁申请谁释放
+- [ ] 是资源就一定有上限
+
+
 
 > 共用体
 
@@ -78,29 +84,510 @@
 
 ## 8月11日 标准I/O操作
 
-**io操作是一切实现的基础**，系统调用io（sysio），标准IO(stdio)，不同的环境下，同一个函数依赖的是不同的系统调用。
+**io操作是一切实现的基础**，对于数据可以存储，转存进文件中，需要时从文件中拿出，所以是一切操作基础。
+
+系统调用io（sysio），标准IO(stdio)，不同的操作系统环境下，同一个函数依赖的是不同的系统调用，所以才需要标准IO，不管是什么操作系统，底层的输入输出到底是怎么实现的，所有的标准IO在任何操作系统下，参数相同，返回值以及调用方法完全一致，所以就解决了不同系统下输入输出方法不相匹配的问题，比如不论是什么系统，printf函数用法完全一致。标准IO移植性好。所以在任何的操作系统下，标准IO依赖于系统调用IO实现。
+
+<img src="李慧琴c语言系统编程/image-20230829204427241.png" alt="image-20230829204427241" style="zoom:67%;" />
+
+
 
 **标准IO（stdio）：FILE 类型贯穿始终**
+
+`FILE实际上是一个结构体`
 
 > 查看man手册:man ls
 
 常见文件操作函数：
 
-fopen();fclose();
+## 1、打开关闭函数
 
-fgetc();fputc();
+`fopen()`
 
-fgets();fputs();
+```c
+FILE *fopen(const char *pathname, const char *mode);
+```
 
-fread();fwrite();
+第一个参数是需要打开的文件名称，第二个参数是打开的模式。
 
-printf();scanf();
+`errno`->相当于一个全局变量，如果当前有一个操作出现错误，那么计算机会将错误原因放在errno里，所以需要及时将errno中的信息打印出来，如果没有及时打印，当前的errno里面的信心可能会被其他的错误信息覆盖掉。
+
+文件打开方式：
+`r r+ w w+ a a+`
+
+r：以只读方式打开文件，流被定位到文件首部
+
+r+: 以读写的方式打开文件，流被定位到文件首部
+
+w：截断文件到0长度，或者以只写的方式创建一个文件，有则清空，无则创建
+
+w+：以读写方式打开文件，有则清空，无则创建
+
+a：在文件尾追加内容，流指针定位在文件尾(文件最后一个字节的后一个位置)
+
+a+：在文件尾追加内容，流指针定位在文件尾(文件最后一个字节的后一个位置)，有则清空，无则创建
+
+r和r+使用的时候，要求文件必须存在，如果文件不存在，直接返回错误值。
+
+> 示例程序fopen.c
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
+
+int main()
+{
+    FILE *fp;
+
+    fp = fopen("/tmp/out","r");
+
+    if(fp == NULL)
+    {
+        fprintf(stderr,"fopen() failed!,errno = %d\n",errno);
+        exit(1);
+    }   
+
+    puts("OK!");
+
+    exit(0);
+}
+```
+
+`函数perror()会主动关联errno，可以直接打印errno信息。`
+
+> 使用实例
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
+
+int main()
+{
+    FILE *fp;
+
+    fp = fopen("/tmp/out","r");
+
+    if(fp == NULL)
+    {
+        perror("fopen()");
+        exit(1);
+    }   
+
+    puts("OK!");
+
+    exit(0);
+}
+```
+
+`另外还有一个函数strerror()，同样可以打印出错误信息，返回一个串，该串会记录errno错误值`
+
+> 使用实例
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
+#include <string.h>
+
+int main()
+{
+    FILE *fp;
+
+    fp = fopen("/tmp/out","r");
+
+    if(fp == NULL)
+    {
+		fprintf(stderr,"fopen():%s\n",strerror(errno));
+        exit(1);
+    } 
+
+    puts("OK!");
+
+    exit(0);
+}
+```
+
+:star2:因为fopen的返回值是FILE的指针变量，本质上FILE是一个结构体，也就是说，函数fopen()返回一个结构体的第一个元素的地址。
+
+`那么这个FILE的结构体存在什么位置呢？`
+
+- 栈 :x:
+
+分析->如果存在于栈上，那么在函数fopen()内部必定存在FILE tmp这样的语句，最后因为返回值是FILE型数据，所以返回tmp，但是tmp在fopen函数调用结束之后就被销毁了，所以不应该是栈。
+
+```c
+FILE *fopen(const char *path, const char *mode)
+{
+    FILE tmp;
+    
+    //赋值操作
+    tmp.xx = xxx;
+    .....
+        
+    return &tmp;
+}
+```
+
+- 静态区 :x:
+
+```c
+FILE *fopen(const char *path, const char *mode)
+{
+    static FILE tmp;//使用static修饰会将变量放置在静态区
+    
+    //赋值操作
+    tmp.xx = xxx;
+    .....
+        
+    return &tmp;
+}
+```
+
+因为static修饰,被放置在静态区的变量，被重复调用的时候，只会声明一次，那么tmp就只会被声明一次，不管是操作什么文件，所以的地址完全相同，那么就意味着在操作所有的文件的时候，使用的是同一个指针，那么最终会导致，不管是操作什么文件，都在操作上一份文件，会冲掉上一份文件。
+
+- 堆 :arrow_up_small:正确
+
+```c
+FILE *fopen(const char *path, const char *mode)
+{
+    FILE *tmp = NULL;//堆上即代表着动态空间
+    
+    tmp = malloc(sizeof(FILE));
+    //赋值操作
+    tmp->xx = xxx;
+    .....
+        
+    return tmp;
+}
+```
+
+所以可见，如果一个函数存在一个逆操作时，那么函数返回值指针一定是存在堆上面，反之不一定成立。
+
+`fclose()`
+
+```c
+int fclose(FILE *fp);
+```
+
+> 使用实例
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
+
+int main()
+{
+    FILE *fp;
+
+    fp = fopen("/tmp/out","r");
+
+    if(fp == NULL)
+    {
+        perror("fopen()");
+        exit(1);
+    }   
+
+    puts("OK!");
+    
+	fclose(fp);
+
+    exit(0);
+}
+```
+
+在linux系统中文件打开的个数是存在上限，其上限存在于`ulimit-a`命令下面的open files参数中
+
+> 验证程序maxfopen
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
+
+int main()
+{
+    int count = 0;
+    FILE *fp;
+
+    while(1)
+    {
+        fp = fopen("/tmp/out","r");
+        if(fp == NULL)
+        {
+            perror("fopen()");
+            break;
+        }   
+        count++;
+    }
+    
+    printf("count = %d\n",count);
+    fclose(fp);
+
+    exit(0);
+}
+```
+
+## 2、输入输出函数
+
+### (1)字符相关
+
+`fgetc()`
+
+`fputc()`
+
+```c
+int fgetc(FILE *stream);
+```
+
+```  c
+int fputc(int c,FILE *stream);  //c设定的输出项
+```
+
+> 实例：使用现有文件构建程序mycopy.c，需要的使用格式是./mycopy srcfile destfile
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
+
+int main(int argc, char **argv)
+{
+
+    FILE *fps, *fpd;
+    int ch;
+    
+    if (argc < 3)
+    {
+        fprintf(stderr,"Usage...\n");
+        exit(1);
+    }
+
+    fps = fopen(argv[1], "r");
+    if (fps == NULL)
+    {
+        perror("fopen()");
+        exit(1);
+    }
+
+    fpd = fopen(argv[2], "w");
+    if (fpd == NULL)
+    {
+        fclose(fps);
+        perror("fopen()");
+        exit(1);
+    }
+
+    while (1)
+    {
+        ch = fgetc(fps);
+        if (ch == EOF)
+            break;
+
+        fputc(ch, fpd);
+    }
+
+    fclose(fpd);
+    fclose(fps);
+
+    exit(0);
+}
+```
+
+> 实例：获取文件中有效字符数的函数fgetc.c
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
+
+/**
+ * 获取一个文件中具有多少个有效字符
+ * 用法：./fgetc srcfile
+ */
+int main(int argc, char **argv)
+{
+    FILE *fp;
+    int count;
+
+    if (argc < 2)
+    {
+        fprintf(stderr, "Usage:%s <srcfile>\n", argv[0]);
+        exit(1);
+    }
+
+    fp = fopen(argv[1], "r");
+    if (fp == NULL)
+    {
+        perror("fopen()");
+        exit(1);
+    }
+
+    while (fgetc(fp) != EOF)
+    {
+        count++;
+    }
+
+    printf("count = %d\n", count);
+    fclose(fp);
+
+    exit(0);
+}
+```
+
+
+
+====================================================================================================
+
+### （2）字符串相关
+
+`fgets()`
+
+`fputs()`
+
+```c
+char *fgets(char *s, int size, FILE *stream)
+int fputs(const char *s, FILE *stream);
+```
+
+有两种情况可以导致fgets函数的正常结束
+
+1. 读到size-1字节的数据
+2. 读到换行符号“\n”
+
+> 实例：重写mycopy.c为mycopy_fgets.c
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
+
+#define BUFSIZE 1024
+
+int main(int argc, char **argv)
+{
+
+    FILE *fps, *fpd;
+    char buf[BUFSIZE];
+
+    if (argc < 3)
+    {
+        fprintf(stderr, "Usage...\n");
+        exit(1);
+    }
+
+    fps = fopen(argv[1], "r");
+    if (fps == NULL)
+    {
+        perror("fopen()");
+        exit(1);
+    }
+
+    fpd = fopen(argv[2], "w");
+    if (fpd == NULL)
+    {
+        perror("fopen()");
+        exit(1);
+    }
+
+    while (fgets(buf, BUFSIZE, fps) != NULL)
+    {
+        fputs(buf, fpd);
+    }
+
+    fclose(fpd);
+    fclose(fps);
+
+    exit(0);
+}
+```
+
+
+
+====================================================================================================
+
+`fread()`存在使用风险，建议使用的时候就是单字节实现
+
+`fwrite()`
+
+```c
+size_t fread(void *ptr,size_t size,size_t nmemb,FILE *stream);
+size_t fwrite(const void *ptr, size_t size,size_t nmemb,FILE *stream);
+```
+
+> 实例：重写mycopy.c为mycopy_fread.c
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
+
+#define BUFSIZE 1024
+
+int main(int argc, char **argv)
+{
+
+    FILE *fps, *fpd;
+    char buf[BUFSIZE];
+    int n;
+
+    if (argc < 3)
+    {
+        fprintf(stderr, "Usage...\n");
+        exit(1);
+    }
+
+    fps = fopen(argv[1], "r");
+    if (fps == NULL)
+    {
+        perror("fopen()");
+        exit(1);
+    }
+
+    fpd = fopen(argv[2], "w");
+    if (fpd == NULL)
+    {
+        perror("fopen()");
+        exit(1);
+    }
+
+    while ((n = fread(buf, 1, BUFSIZE, fps)) > 0)
+    {
+        fwrite(buf, 1, n, fpd);
+    }
+
+    fclose(fpd);
+    fclose(fps);
+
+    exit(0);
+}
+```
+
+====================================================================================================
+
+
+
+`printf()`
+
+`scanf()`
+
+====================================================================================================
+
+
+
+
+
+## 3、寻找文件位置函数
 
 fseek();ftell();rewind();文件位置指针操作
 
-fflush();
 
-函数：fopen() perror() strerror()
+
+## 4、强制刷新输出缓冲区
+
+fflush();
 
 
 
