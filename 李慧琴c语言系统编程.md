@@ -82,7 +82,7 @@
 | 8/20 | 进、线程通信专题 |
 | 8/21 |   网络编程专题   |
 
-## 8月11日 标准I/O操作
+## 一、标准I/O操作
 
 **io操作是一切实现的基础**，对于数据可以存储，转存进文件中，需要时从文件中拿出，所以是一切操作基础。
 
@@ -448,7 +448,7 @@ int main(int argc, char **argv)
 `fputs()`
 
 ```c
-char *fgets(char *s, int size, FILE *stream)
+char *fgets(char *s, int size, FILE *stream);
 int fputs(const char *s, FILE *stream);
 ```
 
@@ -567,75 +567,319 @@ int main(int argc, char **argv)
 
 ====================================================================================================
 
+`printf() scanf()`不谈
 
+输出：
 
-`printf()`
+`fprintf()`
 
-`scanf()`
+`sprintf()`可以将多类型的数据转化成一个整体的串
+
+```c
+int fprintf(FILE *stream, const char *format, ...);
+int sprintf(char *str, const char *format, ...);
+```
+
+> 实例程序sprintf.c
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+int main()
+{
+    char buf[1024];
+    int year = 2023,month = 8,day = 30;
+    
+    sprintf(buf,"%d-%d-%d",year,month,day);
+    
+    puts(buf);
+    exit(0);
+}
+```
+
+`atoi`->将一个字符串转换成整数，相当于是sprintf的反向函数
+
+> 实例atoi.c
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+int main()
+{
+    char str[] = "123456";
+
+    printf("%d\n",atoi(str));
+    exit(0);
+}
+```
+
+`snprintf`:因为sprintf不检查缓冲区达大小，为了防止越界，提出snprintf
+
+```c
+int snprintf(char *str, size_t size, const char *format, ...);
+```
+
+输入：
+
+` fscanf()` 
+
+`sscanf()`
+
+```c
+int fscanf(FILE *stream, const char *format, ...);
+```
 
 ====================================================================================================
 
 
 
+## 3、寻找文件位置函数（操作文件位置指针）
 
+> 文件位置指针解决的问题
+>
+> fp = fopen();
+>
+> fputc(c,fp) * 10 向fp写入10个字符
+>
+> fgetc(fp) * 10   从fp中拿取10个字符
+>
+> 这样是不能够拿到对应输入的功能，因为在执行fputs函数时，文件位置指针已经向后移动了，所以函数fgetc读取得到的字符是上面输入字符之后的字符，此时就需要用到操作文件位置指针的函数
 
-## 3、寻找文件位置函数
+========================================================================================
 
-fseek();ftell();rewind();文件位置指针操作
+`fseek()`寻找文件位置，定位offset是偏移量，whence是指相对位置，开始处(SEEK_SET)，当前位置(SEEK_CUR)，尾部(SEEK_END)
 
+```c
+int fseek(FILE *stream, long offset, int whence);
+```
 
+那么上面的问题可以这样解决
 
-## 4、强制刷新输出缓冲区
+```c
+fp = fopen();
 
-fflush();
+fputc(c,fp) * 10; // 向fp写入10个字符
+    
+fseek(fp,-10,SEEK_CUR);
 
+fgetc(fp) * 10 ;  //从fp中拿取10个字符
+```
 
-
-文件输入输出
-
-printf/fprintf/sprintf
-
-fgets/fgetc/
-
-scanf/fscanf/sscanf
-
-
-
-重定位
-
-fseek()定位文件指针
-
-ftell() 不超过2G，反应当前的文件指针在什么地方
-
-rewind()
-
-
-
-缓冲区
-
-fflush() 强制刷新输出缓冲区
-
-大多数情况下缓冲区的存在是可以应用于合并系统调用
-
-**行缓冲、全缓冲、无缓冲**
+========================================================================================
 
 
 
-文件位置指针，读写一定是对于当前的位置指针来说
+`ftell()`报告当前文件指针位置
+
+```c
+long ftell(FILE *stream);
+```
+
+因为long型的数据大小在不同的系统下有着不同的定义，如果在32为操作系统下，那么long型的数据就是-2G~2G-1大小，那么理论上，fseek函数可以从当前位置whence前后2G的位置，所以可以接收的文件大小为4G,但是在文件系统中找不到负值的文件位置,所以ftell函数只能够适用于2G的文件大小，所以当fseek和ftell配合使用的时候，实际可操作的文件大小为2G。
+
+所以出现了fseeko()和ftello(),解决了文件大小问题`但是不适应于c99`
+
+```c
+int fseeko(FILE *stream, off_t offset, int whence);
+
+off_t ftello(FILE *stream);
+```
+
+> 利用fseek和ftell函数来重构获取文件大小的函数flen.c，要求使用方法：./flen <srcfile>
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
+
+/**
+ * 获取一个文件中具有多少个有效字符
+ * 用法：./flen <srcfile>
+ */
+int main(int argc, char **argv)
+{
+    FILE *fp;
+
+    if (argc < 2)
+    {
+        fprintf(stderr, "Usage:%s <srcfile>\n", argv[0]);
+        exit(1);
+    }
+
+    fp = fopen(argv[1],"r");
+    if(fp == NULL)
+    {
+        perror("fopen()");
+        exit(1);
+    }
+
+    fseek(fp,0,SEEK_END); //寻找到文件尾部
+    printf("%ld\n",ftell(fp));
+
+    fclose(fp);
+
+    exit(0);
+}
+```
+
+========================================================================================
 
 
 
-**如何完整获得一行文件内容**
+`rewind()`不管当前位置在什么地方，直接寻找到文件开始处，fseek(fp,0L,SEEK_SET);
 
-getline()
+```c
+void rewind(FILE *stream);
+```
 
 
 
-临时文件:临时数据保存在临时文件中 （tmpnam/tmpfile）
+fseek通常还有一个作用是用来产生空洞文件，空洞文件可以提前占据一定量的内存空间，比如说在下载文件的时候，在开始的时候会直接拉开一个原文件大小的空洞文件。
 
-1、如何不冲突
+## 4、强制刷新输出缓冲区:star2:
 
-2、及时销毁
+`fflush()`
+
+```c
+int fflush(FILE *stream);
+```
+
+> 实例程序fflush.c
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+int main()
+{
+    printf("Before while");
+
+    while (1);
+
+    printf("After while");
+    exit(0);
+}
+```
+
+上段程序猜想是能够打印Before while，然后程序卡死，但是终端实际上连Before while都无法输出。因为标准输出是行缓冲的模式，只有当行缓冲区满了之后，才会刷新缓冲区，意味着输出。所以修改上述程序
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+int main()
+{
+    printf("Before while");
+
+    fflush();  //刷新所以打开的输出流
+    while (1);
+
+    printf("After while");
+    exit(0);
+}
+```
+
+或者在printf中添加"\n"
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+int main()
+{
+    printf("Before while\n");
+
+    fflush();
+    while (1);
+
+    printf("After while\n");
+    exit(0);
+}
+```
+
+:star:缓冲区的作用
+
+大多数情况下是好事，合并系统调用
+
+- [x] 行缓冲 1、换行的时候刷新 2、行满了的时候刷新 3、强制刷新（标准输出是这样的，因为是终端设备）
+- [x] 全缓冲 1、行满了的时候刷新 2、强制刷新（只要不是终端设备）
+- [x] 无缓冲 需要立即输出内容 如stderr
+
+==========================================================================================
+
+`如何完整获得一行文件内容`
+
+`getline()`
+
+```c
+ssize_t getline(char **lineptr, size_t *n, FILE *stream);
+```
+
+> 输出每一行有多少给有效字符getline.c
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+int main(int argc, char **argv)
+{
+    FILE *fp;
+    char *linebuf;
+    size_t linesize;
+    size_t ret;
+
+    if(argc < 2)
+    {
+        perror("Usage...");
+        exit(1);
+    }
+
+    fp = fopen(argv[1],"r");
+    if(fp == NULL)
+    {
+        perror("fopen()");
+        exit(1);
+    }
+
+while (1)
+{
+    ret = getline(&linebuf,&linesize,fp);  //当读取失败时，返回-1
+    if(ret < 0)  //不希望出现不能够控制的分支，直接写<0
+        break;
+   	
+    printf("%d\n",strlen(linebuf));
+}
+
+    fclose(fp);
+
+    exit(0);
+}
+```
+
+============================================================================================
+
+`临时文件`：对用户体提交的数据进行保存，进行后续操作
+
+- [x] 如何不冲突地创建临时文件
+- [x] 及时销毁临时文件
+
+
+
+`tmpnam()`为一个临时文件创建一个可用的名字，因为该函数创建一个文件需要两步，首先是获取一个名称，再去为这个文件分配内存，因为不是`原子化操作`，所以在高并发的情况下，有可能前面一个文件先获得文件名后，还没来得及去申请内存，这时候第二个tmpnam操作来了，那么会获取同样一个名字，这就会导致文件创建冲突。所以该函数使用存在风险
+
+`tmpfile()`创建一个临时文件，直接创建，创建的是匿名文件，ls寻找不到，全程操作FILE*指针，因为没有名字，所以不会冲突。
+
+```c
+char *tmpnam(char *s);
+FILE *tmpfile(void); 
+```
+
+
+
+
 
 > ## 8月12日 文件IO/系统调用IO
 
