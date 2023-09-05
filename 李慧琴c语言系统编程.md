@@ -82,7 +82,7 @@
 | 8/20 | 进、线程通信专题 |
 | 8/21 |   网络编程专题   |
 
-## 一、标准I/O操作
+# 一、标准I/O操作
 
 **io操作是一切实现的基础**，对于数据可以存储，转存进文件中，需要时从文件中拿出，所以是一切操作基础。
 
@@ -879,9 +879,7 @@ FILE *tmpfile(void);
 
 
 
-
-
-> ## 二、文件IO/系统调用IO
+# 二、文件IO/系统调用IO
 
 **文件描述符是文件IO中贯穿始终的类型**
 
@@ -1212,7 +1210,7 @@ int main()
 
 > 同步：sync,fsync,fdatasync
 
-sync(): 同步内核层面的数据，在接触设备挂载或者说是关机时候，需要将buf和cache中的数据同步到磁盘中
+sync(): 同步内核层面的数据，在解除设备挂载或者说是关机时候，需要将buf和cache中的数据同步到磁盘中
 
 fsync()：指定同步一个文件的buf和cache
 
@@ -1242,7 +1240,7 @@ fcntl()的返回值会跟随cmd的不同而改变
 >
 > 比如 ls -l /dev/fd/  显示的就是ls命令进程的文件描述符信息
 
-## 三、文件系统
+# 三、文件系统
 
 > 一、目录和文件
 
@@ -1256,17 +1254,53 @@ fcntl()的返回值会跟随cmd的不同而改变
 
 比如：touch -a 不成功，但是touch -- -a能够创建名为-a的文件
 
-或者也可以 touch ./a 指定当前路径
+或者也可以 touch ./-a 指定当前路径
 
 **函数**：stat结构体、stat()、fstat()、lstat()
 
-stat:通过文件路径获取属性，面对符号链接文件时获取的是所指向的目标文件的属性 
+```c
+int stat(const char *pathname, struct stat *statbuf);
+int fstat(int fd, struct stat *statbuf);
+int lstat(const char *pathname, struct stat *statbuf);
+```
 
-fstat:通过文件描述符获取属性，
+`stat结构体`
+
+```c
+struct stat {
+               dev_t     st_dev;         /* ID of device containing file */
+               ino_t     st_ino;         /* Inode number */
+               mode_t    st_mode;        /* File type and mode */
+               nlink_t   st_nlink;       /* Number of hard links */
+               uid_t     st_uid;         /* User ID of owner */
+               gid_t     st_gid;         /* Group ID of owner */
+               dev_t     st_rdev;        /* Device ID (if special file) */
+               off_t     st_size;        /* Total size, in bytes */
+               blksize_t st_blksize;     /* Block size for filesystem I/O */
+               blkcnt_t  st_blocks;      /* Number of 512B blocks allocated */
+
+               /* Since Linux 2.6, the kernel supports nanosecond
+                  precision for the following timestamp fields.
+                  For the details before Linux 2.6, see NOTES. */
+           	   struct timespec st_atim;  /* Time of last access */
+               struct timespec st_mtim;  /* Time of last modification */
+               struct timespec st_ctim;  /* Time of last status change */
+
+           #define st_atime st_atim.tv_sec      /* Backward compatibility */
+           #define st_mtime st_mtim.tv_sec
+           #define st_ctime st_ctim.tv_sec
+}
+
+```
+
+stat:通过文件路径获取属性，面对符号链接文件时获取的是所指向的目标文件的属性，将获得的文件属性信息填入到buf地址中。
+
+fstat:通过文件描述符获取属性
 
 lstat:面对符号链接文件时获取的是符号链接文件的属性
 
-通过以上函数实现获取文件长度的函数
+> 实例：通过以上函数实现获取文件长度的函数flen.c
+>
 
 ```c
 #include <stdio.h>
@@ -1301,14 +1335,13 @@ int main(int argc,char **argv)
 
     exit(0);
 }
-
 ```
 
 **空洞文件**
 
-在文件的stat()结构体中，st_size并不等于st_blksize * st_blocks ，一个文件的实际大小是st_blksize*st_blocks
+在文件的stat()结构体中，st_size并不等于st_blksize * st_blocks，一个文件的实际大小是st_blksize * st_blocks
 
-> 实例 :: 生成一个超级大的文件，但是大多数空间都是空的
+> 实例: 生成一个超级大的文件，但是大多数空间都是空的9
 
 ```c
 #include <stdio.h>
@@ -1335,7 +1368,7 @@ int main(int argc,char **argv)
         exit(1);
     }
 
-    lseek(fd,5*1024*1024*1024-1,SEEK_SET);  //一下子拉取5G空间，会发生整数溢出
+    lseek(fd,5LL*1024LL*1024LL*1024LL-1LL,SEEK_SET);  //一下子拉取5G空间，会发生整数溢出
     write(fd,"",1);  //只写入一个字节
 
     close(fd);
@@ -1345,11 +1378,13 @@ int main(int argc,char **argv)
 
 ```
 
-linux下的size值并不是文件实际所占的大小，只是文件的一个属性而已。
+linux下的size值并不是文件实际所占的大小，只是文件的一个属性而已，blocks存储的是具体的文件所占block分区的个数，将它乘以block大小就是实际的文件大小。在windows中文件的size值代表的就是实际的文件所占磁盘大小，但是linux环境下，就只是文件的属性，不代表实际值。
 
 
 
 2、**文件访问权限**
+
+一般上，文件的权限信息格式为：-rwxrwxrwx ,分别代表着（文件属性）1位（文件所有者的权限）3位（同组的用户权限）3位（其他用户的权限）3位
 
 **文件类型**
 
@@ -1432,6 +1467,16 @@ st_mode是一个16位的位图，用于表示文件类型，文件访问权限�
 
 函数chmod() fchmod()
 
+```c
+int chmod(const char *pathname, mode_t mode);
+int fchmod(int fd, mode_t mode);
+```
+
+修改文件的权限
+
+- [x] 通过数字来配置，chmod 666 a.c 那么a.c的权限就会变成rw_rw_rw_
+- [x] 通过字母来配置，chmod a+x a.c 那么a.c的所有用户将会获得执行它的权限，要是仅仅需要某些用户获得权限，可以 u+x  g+x o+x，分别代表着用户获得，同组用户获得，其他用户获得。
+
 
 
 5、**粘住位**
@@ -1448,9 +1493,9 @@ t位，给某一个二进制可执行命令设置当前t位，将某一个命令
 
 两种不同文件系统的差别：
 
-**FAT16/32**：实际上是静态单链表存储,缺点是由于单链表存储，文件走向只能是单向的，承载能力有限。
+**FAT16/32**：实际上是`静态单链表`存储,缺点是由于单链表存储，文件走向只能是单向的，承载能力有限。
 
-**UFS文件系统**：inode是一个结构体，有一个文件几乎所有的内容。inode是一种结构体，内部包含有三级指针结构，256K，256*256k,256 * 256 * 256k，所以UFS文件系统不怕大文件。文件名存在于目录文件中，并不是inode中。目录文件包含inode和fname信息。
+**UFS文件系统**：inode是一个结构体，有一个文件几乎所有的内容，首先是12个指针，内部还包含有三级指针结构，256K，256*256k,256 * 256 * 256k，所以UFS文件系统不怕大文件。文件名存在于目录文件中，并不是inode中。目录文件包含inode和fname信息。inode位图会记录各个inode的使用情况，用或是空闲，以1/0标识
 
 
 
@@ -1478,7 +1523,7 @@ cd（chdir）、chroot(假根安全机制)、getcwd()获取当前工作路径
 
 glob()进行目录解析,可以实现下面所有函数的功能，解析模式/通配符
 
-**glob函数应用**:查看/etc目录下面有多少a*.conf文件
+> **glob函数应用**:查看/etc目录下面有多少a*.conf文件
 
 ```c
 #include <stdio.h>
@@ -1517,10 +1562,6 @@ int main()
     exit(0);
 }
 ```
-
-
-
-
 
 opendir()
 
@@ -1566,7 +1607,7 @@ seek()
 
 telldir()
 
-**du命令**可以查看4一个目录或者文件所占磁盘的大小，默认以k为单位。
+**du命令**可以查看一个目录或者文件所占磁盘的大小，默认以k为单位。
 
 > 实例：实现一个mydu程序，实现和du一样的功能(递归实现获得对于文件或文件夹所占数据块的大小数值)
 
@@ -1768,26 +1809,28 @@ int main(int argc,char **argv)
 
 `正常终止`：
 
-1. 从main函数返回，进程的return返回值是给其父进程的，
-2. 调用exit
-3. 调用_exit或者是 _Exit，这两个是系统调用，exit()依赖于它们实现
+1. 从main函数返回，进程的return返回值是给其父进程的
+2. 调用exit()
+3. 调用__exit()或者是_ _Exit()，这两个是系统调用，exit()依赖于它们实现
 4. 最后一个线程从其启动例程返回
-5. 最后一个线程调研pthread_exit
+5. 最后一个线程调用pthread_exit()
+
+在正常情况下使用 `exit()`，因为它允许程序做一些必要的清理工作。但在某些情况下，如果需要立即终止进程，而不关心清理操作，可以使用 `_exit()`。
 
 `异常终止`：
 
-1. 调用abort
-2. 接到一个信号并终止
+1. 调用abort()
+2. 接到一个`信号`并终止
 3. 最后一个线程对其取消请求作出响应
 
-**atexit()**：钩子函数
+`atexit()：钩子函数`
 
 > 实例：实际的运行效果是先打印Begin、End,再在即将调用exit()之前再调用钩子函数，以**逆序**的方式调用，输出是f3/f2/f1
 
 ```c
 #include <stdio.h>
 #include <stdlib.h>
- 
+
 static void f1(void)
 {
     puts("f1() is working!");
@@ -1850,8 +1893,8 @@ int main(int argc, char **argv)
 {
     int c;
     char fmtstr[FMTSTRSIZE];
-    time_t stamp;
-    struct tm *tm;
+    time_t stamp; //时间戳，这是一长串数字，代表从某个时间已经经过了多少时间
+    struct tm *tm; //本地时间结构体。具有年月日时分秒等内容
     char timestr[TIMESTRSIZE];
 
     fmtstr[0] = '\0';
@@ -1910,14 +1953,12 @@ int main(int argc, char **argv)
         }
     }
 
-    strftime(timestr, TIMESTRSIZE, fmtstr, tm);
+    strftime(timestr, TIMESTRSIZE, fmtstr, tm);   //将时间信息格式化为字符串
     puts(timestr);
 
     exit(0);
 }
 ```
-
-
 
 4、**环境变量**
 
@@ -1979,7 +2020,7 @@ rlimit结构体：包含软限制和硬限制，普通用户不能够增加自�
 
 
 
-> 四、进程
+# 四、进程
 
 **1、进程标识符pid**
 
@@ -2070,9 +2111,10 @@ int main()
         if (pid == 0)   //子进程
         {
             mark = 1;
-            for (j = 2; j < i / 2; j++)
+            
+            for(j = 2; j < i / 2; j++)
             {
-                if (i % j == 0)
+                if(i % j == 0)
                 {
                     mark = 0;
                     break;
@@ -2093,7 +2135,7 @@ int main()
 
 ```
 
-**父子进程关系：**当父进程先于结束时，他所创建的子进程将变成僵尸进程，所有的僵尸进程将由init进程接管，虽然僵尸进程占据不了太多内存，但是他会占据pid，这是需要解决的问题,所以需要收尸僵尸进程。
+**父子进程关系：**当父进程先于子进程结束时，他所创建的子进程将变成僵尸进程，所有的僵尸进程将由init进程接管，虽然僵尸进程占据不了太多内存，但是他会占据pid，这是需要解决的问题,所以需要收尸僵尸进程。
 
 vfork()：在fork的时候，当复制数据的时候，原始的fork会使得子进程也复制一份同样的数据，会造成存储空间的浪费，但是vfork会使得子进程和父进程使用相同的存储空间。但是现在的fork已经可以处理复制数据的问题，fork时，父子进程对于数据块是只读共享的，当需要进行数据块的更改时，以谁改谁拷贝的原则进行处理，只能修改拷贝的数据，所以vfork基本要被废弃。
 
@@ -2103,7 +2145,7 @@ vfork()：在fork的时候，当复制数据的时候，原始的fork会使得�
 
 等待进程状态发生变化
 
-wait()  
+wait()
 
 waitpid()具有等待指定pid和配置是否要阻塞选项的操作
 
@@ -2130,14 +2172,14 @@ int main()
     int i, j, mark, n;
     pid_t pid;
 
-    for (n = 0; n < N; n++)
+    for(n = 0; n < N; n++)
     {
         pid = fork();
 
         if (pid < 0)
         {
-            perror("fork()..");
-            for (int m = 0; m < n - 1; m++)
+            perror("fork()");
+            for(int m = 0; m < n - 1; m++)
             {
                 wait(NULL);
             }
@@ -2146,11 +2188,11 @@ int main()
 
         if (pid == 0)
         {
-            for (i = LEFT + n; i <= RIGHT; i += N)
+            for(i = LEFT + n; i <= RIGHT; i += N)
             {
 
                 mark = 1;
-                for (j = 2; j < i / 2; j++)
+                for(j = 2; j < i / 2; j++)
                 {
                     if (i % j == 0)
                     {
@@ -2180,6 +2222,84 @@ int main()
 
 **4、exec函数族**
 
+```c
+execl()  execplp()  execle()  execv()  execvp()  执行一个文件
+```
+
+`exec函数族会使用一个新的进程映像替换当前进程的映像`，所以在shell下，创建进程会有一个新的名称而不是复制shell进程。
+
+```c
+#include <unistd.h>
+
+    extern char **environ;
+
+    int execl(const char *pathname, const char *arg, .../* (char  *) NULL */);   
+    int execlp(const char *file, const char *arg, ... /* (char  *) NULL */);
+    int execle(const char *pathname, const char *arg, ... /*, (char *) NULL, char *const envp[] */);
+    int execv(const char *pathname, char *const argv[]);//arg可以携带多个参数，最后以NULL来结束
+    int execvp(const char *file, char *const argv[]);
+
+```
+
+> 实例：打印时间戳,在终端里面的命令是：date + %s
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+int main()
+{
+    puts("Begin!");
+ 
+    fflush();
+    
+    execl("/bin/date","date","+%s",NULL);
+    perror("execl()");
+    exit(1);
+    
+    puts("End!");
+    
+    exec(0);
+}
+```
+
+换种形式实现
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+int main()
+{
+    
+    puts("Begin!");
+ 
+    fflush(NULL);
+    
+    pid = fork();
+    if(pid < 0)
+    {
+        perror("fork()");
+        exit(1);
+    }
+    
+    if(pid == 0)
+    {
+        execl("/bin/date","date","+%s",NULL);
+        perror("execl());
+        exit(1);
+    }
+    
+    wait(NULL);
+
+    puts("End!");
+    
+    exit(0);
+}
+```
+
 因为子进程是通过复制父进程的方式来创建的，子进程的文件描述符同父进程相同，因为父进程的标准输出是在命令行，所以子进程在输出的时候，同样也是通过命令行输出，其他的文件描述符子进程和父进程也相同。
 
 > 实现mysh，解析由命令行输入的命令
@@ -2191,7 +2311,7 @@ int main()
 #include <string.h>
 #include <glob.h>
 
-#define DELIMS " \t\n "
+#define DELIMS " \t\n"  //分隔符包含空格、制表符、换行
 
 struct cmd_st
 {
@@ -2203,21 +2323,21 @@ static void prompt(void)
     printf("mysh-0.1$ ");
 }
 
-static void parse(char *line, struct cmd_st *res)
+static void parse(const char *line, struct cmd_st *res)
 {
     char *tok;
 
-    int flag = 0;
+    int flag = 0;  //对于解析到的命令行内容，只有第一个不追加，后面的命令都追加到glob
 
     while (1)
     {
-        tok = strsep(&line, DELIMS);
+        tok = strsep(&line, DELIMS);  //用于将字符串分割成多个子字符串，类似于 strtok() 函数。
         if (tok == NULL)
             break;
-        if (tok[0] == '\0')
+        if (tok[0] == '\0')  //一个数组的第0位空间为0，说明该数组是空，表示当前解析的命令行字符串中有多个分隔符，需要继续接收
             continue;
 
-        glob(tok, GLOB_NOCHECK | GLOB_APPEND * flag, NULL, &res->globres);
+        glob(tok, GLOB_NOCHECK | GLOB_APPEND * flag, NULL, &res->globres);  //用于根据指定的文件路径模式查找匹配的文件
         flag = 1;
     }
 }
@@ -2231,30 +2351,32 @@ int main()
 
     while (1)
     {
-        prompt();
+        prompt();  //打印提示符
 
-        if (gestline(&linebuf, &linebuf_size, stdin) < 0)
+        //获取命令行所以的内容
+        if (getline(&linebuf, &linebuf_size, stdin) < 0)
             break;
 
-        parse(linebuf, &cmd);
+        parse(linebuf, &cmd);  //解析上面拿到的命令
 
         if (0) // 内部命令
         {
             /*do something*/
         }
-        else // 外部命令
+        else // 外部命令，在linux环境下，大部分命令都是外部命令
         {
             pid = fork();
             if (pid < 0)
             {
-                perror("fork()..");
+                perror("fork()");
                 exit(1);
             }
 
-            if (pid == 0)
+            if (pid == 0)  //子进程
             {
+                //变参就选择execvp
                 execvp(cmd.globres.gl_pathv[0],cmd.globres.gl_pathv);
-                perror("execvp()..");
+                perror("execvp()");
                 exit(1);
             }
             else
@@ -2263,12 +2385,18 @@ int main()
             }
         }
     }
-
     exit(0);
 }
 ```
 
-strtok()
+strtok()：将一个字符串分割成多个子字符串，通常根据特定的分隔符进行分割。
+
+```c
+char *strtok(char *str, const char *delim);
+```
+
+- `str` 是要分割的字符串，第一次调用时传入待分割的字符串，之后调用时传入 NULL，表示继续使用上一次的字符串继续分割。
+- `delim` 是分隔符字符串，其中包含一个或多个字符，用于指定在哪些字符处分割字符串。
 
 strsep()
 
@@ -2330,7 +2458,6 @@ int main(int argc,char **argv)
         fprintf("Usage...");
         exit(1);
     }
-
     
     pid = fork();
     if(pid < 0)
@@ -2375,7 +2502,6 @@ ps
 #include <stdio.h>
 #include <stdlib.h>
 
-
 int main()
 {
 
@@ -2397,17 +2523,55 @@ acct()不可移植，了不了解无所谓
 
 times() : time的命令就是通过它封装的
 
+```c
+#include <sys/times.h>
+
+clock_t times(struct tms *buf);
+
+"clock_t"
+其中clock_t是滴答数，1秒钟有多少个滴答数构成，是更为精确的计时方式
+
+"结构体tms"
+struct tms {
+    
+    clock_t tms_utime;  /* user time */
+    clock_t tms_stime;  /* system time */
+    clock_t tms_cutime; /* user time of children */
+    clock_t tms_cstime; /* system time of children */
+};
+
+```
 
 
-**10、守护进程**(精灵进程)，所有的守护进程全部脱离控制终端tty
+
+**10、守护进程**(精灵进程)，所有的守护进程全部脱离控制终端tty,因为控制终端的输入输出操作会影响到守护进程的工作，一直运行在后台。
+
+> 守护进程的概念
 
 `会话session`
 
-一个shell里面会包含多个进程组，标识sid
+一个shell里面会包含多个进程组，进程组内包含多个进程，标识sid
 
 `终端`
 
 setsid()，创建一个会话并且设置进程组的id，父进程不能够调用。所有的守护进程将由init进程管理，不需要它的父进程wait()
+
+setsid()的主要用途：
+
+1. **创建新会话**：
+   - `setsid` 会创建一个新的会话，并将调用它的进程设置为该会话的领导者。
+   - 新会话不会与终端关联，这意味着进程不再受终端的控制，即使终端被关闭，进程也会继续运行。
+   - 由于脱离了终端控制，它可以在后台运行，独立于用户登录会话。
+2. **断开与父进程的联系**：
+   - 通常，`setsid` 被守护进程使用，以确保它不会因为父进程的退出而受到影响。
+   - 调用 `setsid` 后，进程会脱离父进程的控制，成为一个孤儿进程组的领导者。
+3. **改变工作目录**：
+   - `setsid` 会改变进程的工作目录为根目录，这有助于避免进程在后续运行中受到目录的卸载或删除的影响。
+
+```c
+#include <unistd.h>
+pid_t setsid(void);
+```
 
 getpgrp()：返回当前进程组的id或者查看一个指定的进程所在的进程组的id
 
@@ -2415,23 +2579,97 @@ getpgid(): 获取某一个进程的组id
 
 setpgid()：指定某一个进程放到某一个进程组中
 
+> 实现一个守护进程mydaemon.c
 
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+#define FNAME "/tmp/out"
+
+static int daemmonize(void)
+{
+   
+    int fd;
+    
+    pid_t pid;
+    pid = fork();
+    if(pid < 0)
+    {
+        perror("fork()");
+        return -1;
+    }
+    if(pid > 0) //父进程
+    {
+        return 0;
+
+    }
+    
+    fd = open("/dev/null",O_RDWR);
+    if(fd < 0)
+    {
+        perror("open()");
+        return -1;
+    }
+	
+    //将fd重定向到0、1、2上
+    dup2(fd,0);
+    dup2(fd,1);
+    dup2(fd,2);
+    if(fd > 2)
+        close(fd);
+    
+    setsid(); //该函数，父进程不能够调用
+    
+    //将当前工作路径设置为根路径
+    chdir("/");
+    return 0;
+}
+
+int main()
+{
+    FILE *fp;
+    
+    if(daemmonize())   //创建守护进程
+    {
+        exit(1);
+    }
+    //该守护进程的任务，只要该守护进程一直在后台运行着，就打开一个文件，往里面写入数字
+    fp = fopen(FNAME,"w");
+    if(fp == NULL)
+    {
+        perror("fopen()");
+        exit(1);
+    }
+    
+    for(int i = 0;;i++)
+    {
+        fprintf(fp,"%d\n",i);
+        fflush(fp);
+        slep(1);
+    }
+    
+    exit(0);
+}
+```
 
 **11、系统日志**
 
 每个应用程序都需要具有一个系统日志
 
-syslogd服务
+syslogd服务，当有进程需要写系统日志时，将自己需要的日志格式规定传递给这个服务，由它来统一进行系统日志的书写，只要syslogd有权利写系统日志。（权限分离）
 
-openlog()
+下面的三个函数构成linux环境下的系统日志架构
 
-syslog()
+openlog() 将本今进程建立与syslogd的连接
 
-closelog()
+syslog()  传递信息给syslogd
+
+closelog()  断开当前进程和syslogd的连接
 
 
 
-> ## 8月22日并发-》信号和多线程
+# 五、信号和多线程
 
 异步事件处理：查询法（当前异步事件发生比较密集），通知法（当前异步事件发生比较稀疏），严格意义上没有实际的通知法，同样需要一定机制去保证通知法正常执行。
 
