@@ -1364,7 +1364,7 @@ int main(int argc,char **argv)
     fd = open(argv[1],O_WRONLY|O_CREAT|O_TRUNC,0600);
     if(fd < 0)
     {
-        perror("open()");
+        perror("open()");8
         exit(1);
     }
 
@@ -1984,7 +1984,7 @@ pmap()
 
 动态库
 
-静态库
+静态库 
 
 手工装载库
 
@@ -2228,6 +2228,10 @@ execl()  execplp()  execle()  execv()  execvp()  执行一个文件
 
 `exec函数族会使用一个新的进程映像替换当前进程的映像`，所以在shell下，创建进程会有一个新的名称而不是复制shell进程。
 
+这些`exec`函数族在成功执行时不会返回，因为它们会替代当前进程的内存映像。如果执行失败，它们将返回-1，并设置全局变量`errno`来指示错误的类型。
+
+`exec`函数族通常用于创建新进程，例如在`fork`之后，子进程可以使用`exec`来加载不同的程序。这允许进程在不启动新的进程的情况下更改自己的代码和数据，实现了进程的动态替换和程序调用。
+
 ```c
 #include <unistd.h>
 
@@ -2252,7 +2256,7 @@ int main()
 {
     puts("Begin!");
  
-    fflush();
+    fflush(NULL);
     
     execl("/bin/date","date","+%s",NULL);
     perror("execl()");
@@ -2315,7 +2319,7 @@ int main()
 
 struct cmd_st
 {
-    glob_t globres;
+    glob_t globres;  //用来存储解析完成的命令行字符串，已经被拆开的字符串
 };
 
 static void prompt(void)
@@ -2323,9 +2327,9 @@ static void prompt(void)
     printf("mysh-0.1$ ");
 }
 
-static void parse(const char *line, struct cmd_st *res)
+static void parse(const char *line, struct cmd_st *res)  //解析通过终端输入的命令字符串
 {
-    char *tok;
+    char *tok;  //在放入glob之前暂时存储命令行字符串
 
     int flag = 0;  //对于解析到的命令行内容，只有第一个不追加，后面的命令都追加到glob
 
@@ -2353,8 +2357,8 @@ int main()
     {
         prompt();  //打印提示符
 
-        //获取命令行所以的内容
-        if (getline(&linebuf, &linebuf_size, stdin) < 0)
+        //获取命令行所有的内容，获取一整行的内容，getline是一个相当强大的工具函数
+        if (getline(&linebuf, &linebuf_size, stdin) < 0)  //从标准输入中获取字符串
             break;
 
         parse(linebuf, &cmd);  //解析上面拿到的命令
@@ -2392,7 +2396,7 @@ int main()
 strtok()：将一个字符串分割成多个子字符串，通常根据特定的分隔符进行分割。
 
 ```c
-char *strtok(char *str, const char *delim);
+char *strtok(char *str, const char *delim);   //接收到的字符串，设置的分割符
 ```
 
 - `str` 是要分割的字符串，第一次调用时传入待分割的字符串，之后调用时传入 NULL，表示继续使用上一次的字符串继续分割。
@@ -2599,13 +2603,14 @@ static int daemmonize(void)
         perror("fork()");
         return -1;
     }
+    
     if(pid > 0) //父进程
     {
         return 0;
-
     }
     
-    fd = open("/dev/null",O_RDWR);
+    fd = open("/dev/null",O_RDWR); //终端
+    
     if(fd < 0)
     {
         perror("open()");
@@ -2619,7 +2624,7 @@ static int daemmonize(void)
     if(fd > 2)
         close(fd);
     
-    setsid(); //该函数，父进程不能够调用
+    setsid(); //该函数，父进程不能够调用，此时daemanize成为该会话的领导者
     
     //将当前工作路径设置为根路径
     chdir("/");
@@ -2642,7 +2647,7 @@ int main()
         exit(1);
     }
     
-    for(int i = 0;;i++)
+    for(int i = 0;i < 100;i++)
     {
         fprintf(fp,"%d\n",i);
         fflush(fp);
@@ -2671,7 +2676,7 @@ closelog()  断开当前进程和syslogd的连接
 
 # 五、信号和多线程
 
-异步事件处理：查询法（当前异步事件发生比较密集），通知法（当前异步事件发生比较稀疏），严格意义上没有实际的通知法，同样需要一定机制去保证通知法正常执行。
+`异步事件处理的两种方法`：查询法（当前异步事件发生比较密集），通知法（当前异步事件发生比较稀疏），严格意义上没有实际的通知法，同样需要一定机制去保证通知法正常执行。异步事件什么时候到来不知道，出现什么结果不清楚。
 
 **1、信号**
 
