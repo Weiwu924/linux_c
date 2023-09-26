@@ -156,7 +156,7 @@ ADD_EXECUTABLE(hello main.cpp)
 
 - 变量使用${}方式取值，但是在 IF 控制语句中是直接使用变量名
 - 指令(参数 1 参数 2...) 参数使用括弧括起，参数之间使用空格或分号分开。 以上面的 ADD_EXECUTABLE 指令为例，如果存在另外一个 func.cpp 源文件
-    
+  
     就要写成：ADD_EXECUTABLE(hello main.cpp func.cpp)或者ADD_EXECUTABLE(hello main.cpp;func.cpp)
     
 - 指令是大小写无关的，参数和变量是大小写相关的。但，推荐你全部使用大写指令
@@ -238,7 +238,7 @@ ADD_SUBDIRECTORY(source_dir [binary_dir] [EXCLUDE_FROM_ALL])
 - 这个指令用于向当前工程添加存放源文件的子目录，并可以指定中间二进制和目标二进制存放的位置
 - EXCLUDE_FROM_ALL函数是将写的目录从编译中排除，如程序中的example
 - ADD_SUBDIRECTORY(src bin)
-    
+  
     将 src 子目录加入工程并指定编译输出(包含编译中间结果)路径为bin 目录
     
     如果不进行 bin 目录的指定，那么编译结果(包括中间结果)都将存放在build/src 目录
@@ -316,9 +316,9 @@ INSTALL(PROGRAMS runhello.sh DESTINATION bin)
 
 - 一、是通过在 doc 目录建立CMakeLists.txt ，通过install下的file
 - 二、是直接在工程目录通过
-    
+  
      INSTALL(DIRECTORY doc/ DESTINATION share/doc/cmake)
-    
+
 
 DIRECTORY 后面连接的是所在 Source 目录的相对路径
 
@@ -557,9 +557,3 @@ TARGET_LINK_LIBRARIES的时候，只需要给出动态链接库的名字就行�
 
 补充：生产debug版本的方法：
 cmake .. -DCMAKE_BUILD_TYPE=debug
-
-# 本⼈所有视频和笔记都是免费分享给⼤家的，制作视频和笔记要花费⼤量的时间成本
-我也有⽼婆和孩⼦要养，恳求各位观众⽼爷们有经济实⼒的稍微打赏⼀下⼩弟，但不强求，再⼀次感谢。
-您的打赏，会让我今后有更⼤的动⼒，做出更优质的视频，感谢⼤家的⽀持
-
-![Untitled](CMake%204f0e9a3fcf9949adab4540191610cf3e/Untitled.png)
