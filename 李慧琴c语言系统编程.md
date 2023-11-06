@@ -2,9 +2,9 @@
 
 ## 李慧琴linux嵌入式C语言编程
 
-- [ ] 谁打开谁关闭
-- [ ] 谁申请谁释放
-- [ ] 是资源就一定有上限
+- [x] 谁打开谁关闭
+- [x] 谁申请谁释放
+- [x] 是资源就一定有上限
 
 
 
@@ -17,6 +17,91 @@
 > ### makefile文件编写 (make工程管理器)
 
 对于多级的项目结构，运行前的编译工作，通过多级makefile文件的方式进行编译工作,全过程相当于从叶子往根进行遍历
+
+`对于makefile文件的详细解释：`
+现在我有几个文件：main.c tool1.c tool2.c tool1.h tool2.h，其中main.c文件依赖于tool1.c和tool2.c，将它们通过gcc编译成为可执行文件tool
+
+最一般的makfile写法：
+
+```makefile
+tool:main.o	tool1.o	tool2.o
+	gcc main.o	tool1.o	tool2.o	-o	tool
+
+main.o:main.c
+	gcc main.c	-c -g -Wall	-o	main.o
+
+tool1.o:tool1.c
+	gcc	tool1.c	-c -g -Wall	-o	tool1.o
+
+tool2.o:tool2.c
+	gcc tool2.c	-c -g -Wall	-o	tool2.o
+
+clean:
+	rm -rf *.o tool
+```
+
+初步改进：我们使用代替的方式替换编译过程中出现的资源或是命令，其中比较特殊的是$^指代在上一句命令中所需要的资源文件，$@指代需要生成的目标文件
+
+```makefile
+OBJS=main.o	tool1.o	tool2.o
+CC=gcc
+CFLAGS+=-c -g -Wall
+
+tool:$(OBJS)
+	$(CC) $^	-o	$@
+
+main.o:main.c
+	$(CC) $^	$(CFLAGS)	-o	$@
+
+tool1.o:tool1.c
+	$(CC)	$^	$(CFLAGS)	-o	$@
+
+tool2.o:tool2.c
+	$(CC) $^	$(CFLAGS)	-o	$@
+
+clean:
+	rm -rf *.o tool
+```
+
+再进一步改进：我们使用%通配符的形式将类似的语句形成一个公式，表示我们需要的tool可执行文件依赖于所有OBJS所包含的文件，而这些文件中所有的.o文件都需要通过%.o:%.c生成
+
+```makefile
+OBJS=main.o	tool1.o	tool2.o
+CC=gcc
+CFLAGS+=-c -g -Wall
+
+tool:$(OBJS)
+	$(CC) $^	-o	$@
+
+%.o:%.c
+	$(CC) $^	$(CFLAGS)	-o	$@
+
+clean:
+	rm -rf *.o tool
+```
+
+我们也可以直接使用makefile来运行可执行文件，其中@./$(target)的@代表不打印命令执行记录
+
+```makefile
+OBJS=main.o	tool1.o	tool2.o
+CC=gcc
+CFLAGS+=-c -g -Wall
+target=tool
+
+$(target):$(OBJS)
+	$(CC) $^	-o	$@
+
+%.o:%.c
+	$(CC) $^	$(CFLAGS)	-o	$@
+
+clean:
+	rm -rf *.o tool
+
+run:$(target)
+	@./$(target)
+```
+
+
 
 > **俄罗斯方块实现**
 
@@ -3389,12 +3474,6 @@ alarm()
 
 
 **10、实时信号**
-
-
-
-
-
-
 
 
 
