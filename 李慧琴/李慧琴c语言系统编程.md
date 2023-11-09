@@ -330,7 +330,7 @@ FILE *fopen(const char *path, const char *mode)
 }
 ```
 
-因为static修饰,被放置在静态区的变量，被重复调用的时候，只会声明一次，那么tmp就只会被声明一次，不管是操作什么文件，所以的地址完全相同，那么就意味着在操作所有的文件的时候，使用的是同一个指针，那么最终会导致，不管是操作什么文件，都在操作上一份文件，会冲掉上一份文件。
+因为static修饰，被放置在静态区的变量，被重复调用的时候，只会声明一次，那么tmp就只会被声明一次，不管是操作什么文件，所有的地址完全相同，那么就意味着在操作所有的文件的时候，使用的是同一个指针，那么最终会导致，不管是操作什么文件，都在操作上一份文件，会冲掉上一份文件。
 
 - 堆 :arrow_up_small:正确
 
@@ -383,7 +383,7 @@ int main()
 }
 ```
 
-在linux系统中文件打开的个数是存在上限，其上限存在于`ulimit-a`命令下面的open files参数中
+在linux系统中文件打开的个数是存在上限，其上限存在于`ulimit -a`命令下面的open files参数中
 
 > 验证程序maxfopen
 
@@ -431,7 +431,10 @@ int fgetc(FILE *stream);
 int fputc(int c,FILE *stream);  //c设定的输出项
 ```
 
-> 实例：使用现有文件构建程序mycopy.c，需要的使用格式是./mycopy srcfile destfile
+> 实例：使用现有文件构建程序mycopy.c，
+> `while` 循环使用 `fgetc` 从源文件（`fps`）读取字符，并使用 `fputc` 将它们写入目标文件（`fpd`）。随着读取字符，`fps` 中的文件位置指示器会自动向前移动，因此下一次调用 `fgetc` 将读取文件中的下一个字符。同样，使用 `fputc` 写入字符时，`fpd` 中的文件位置指示器也会自动向前移动。
+>
+> 用法：./mycopy srcfile destfile
 
 ```c
 #include <stdio.h>
@@ -528,7 +531,7 @@ int main(int argc, char **argv)
 
 ### （2)字符串相关
 
-`fgets()`
+`fgets()`读取一整行的内容
 
 `fputs()`
 
@@ -746,7 +749,7 @@ int fseek(FILE *stream, long offset, int whence);
 fp = fopen();
 
 fputc(c,fp) * 10; // 向fp写入10个字符
-    
+
 fseek(fp,-10,SEEK_CUR);
 
 fgetc(fp) * 10 ;  //从fp中拿取10个字符
@@ -762,9 +765,9 @@ fgetc(fp) * 10 ;  //从fp中拿取10个字符
 long ftell(FILE *stream);
 ```
 
-因为long型的数据大小在不同的系统下有着不同的定义，如果在32为操作系统下，那么long型的数据就是-2G~2G-1大小，那么理论上，fseek函数可以从当前位置whence前后2G的位置，所以可以接收的文件大小为4G,但是在文件系统中找不到负值的文件位置,所以ftell函数只能够适用于2G的文件大小，所以当fseek和ftell配合使用的时候，实际可操作的文件大小为2G。
+因为long型的数据大小在不同的系统下有着不同的定义，如果在32位操作系统下，那么long型的数据就是-2G~2G-1大小，那么理论上，fseek函数可以从当前位置whence前后2G的位置，所以可以接收的文件大小为4G,但是在文件系统中找不到负值的文件位置,所以ftell函数只能够适用于2G的文件大小，所以当fseek和ftell配合使用的时候，实际可操作的文件大小为2G。
 
-所以出现了fseeko()和ftello(),解决了文件大小问题`但是不适应于c99`
+所以出现了fseeko()和ftello(),解决了文件大小问题`但是不适用于c99`
 
 ```c
 int fseeko(FILE *stream, off_t offset, int whence);
@@ -772,7 +775,9 @@ int fseeko(FILE *stream, off_t offset, int whence);
 off_t ftello(FILE *stream);
 ```
 
-> 利用fseek和ftell函数来重构获取文件大小的函数flen.c，要求使用方法：./flen <srcfile>
+> 利用fseek和ftell函数来重构获取文件大小的函数flen.c
+>
+> 使用方法：./flen srcfile
 
 ```c
 #include <stdio.h>
@@ -813,7 +818,7 @@ int main(int argc, char **argv)
 
 
 
-`rewind()`不管当前位置在什么地方，直接寻找到文件开始处，fseek(fp,0L,SEEK_SET);
+`rewind()`不管当前位置在什么地方，直接寻找到文件开始处，相当于fseek(fp,0L,SEEK_SET);
 
 ```c
 void rewind(FILE *stream);
@@ -822,6 +827,11 @@ void rewind(FILE *stream);
 
 
 fseek通常还有一个作用是用来产生空洞文件，空洞文件可以提前占据一定量的内存空间，比如说在下载文件的时候，在开始的时候会直接拉开一个原文件大小的空洞文件。
+
+```c
+FILE *fp;
+fseek(fp,size,SEEK_SET); //会占据size大小内存的位置
+```
 
 ## 4、强制刷新输出缓冲区:star2:
 
@@ -858,7 +868,7 @@ int main()
 {
     printf("Before while");
 
-    fflush();  //刷新所以打开的输出流
+    fflush(stdout);  //刷新所有打开的输出流，行缓冲模式
     while (1);
 
     printf("After while");
@@ -875,8 +885,7 @@ int main()
 int main()
 {
     printf("Before while\n");
-
-    fflush();
+    
     while (1);
 
     printf("After while\n");
@@ -894,13 +903,15 @@ int main()
 
 ==========================================================================================
 
-`如何完整获得一行文件内容`
+`如何完整获得一行文件内容(有多少拿多少)`
 
-`getline()`
+`getline()`这个函数的主要作用是帮助你以更安全和方便的方式读取变长的文本行，而不需要手动管理缓冲区的大小。函数的声明如下：
 
 ```c
 ssize_t getline(char **lineptr, size_t *n, FILE *stream);
 ```
+
+`getline` 函数的主要优点是它可以自动处理分配和重新分配缓冲区的问题，以适应变长的文本行，从而简化了文件读取的代码。只需要提供一个指针来接收文本行，`getline` 会负责分配、重新分配和管理内存。`它还返回读取的字符数，或者在出现错误时返回 -1`，以帮助检测是否成功读取了一行文本。这使得处理不定长度的文本行变得更加方便。
 
 > 输出每一行有多少给有效字符getline.c
 
@@ -971,8 +982,6 @@ FILE *tmpfile(void);
 > 文件描述符fd的概念（整型数、数组下标、优先使用当前数组可用范围内最小的下标）
 
 在**标准IO**中，FILE贯穿始终，当打开一个文件时会产生一个结构体中，其中必定有一个指针为pos，指定当前的位置，**标准IO是依赖文件IO实现的**。在**系统调用IO**中，每一个文件一定会有自己的唯一标识inode，也会产生一个结构体，该结构体会包含其对应的文件所有的信息，结构体会包含pos指针。文件描述符的本质是整型数，根据这个整型数去获得指针，通过指针找到文件操作结构体，从而操作文件。每次打开一个文件都会产生一个结构体，**无论是不是open同一个文件**。在结构体当中还存在一个计数器，记录着文件被引用的次数（该结构体本身被依赖的次数），当有多个指针指向该结构体时，会通过判断计数器的数值来决定要不要在释放指针的时候释放掉结构体内存。**在一个系统中能够打开的文件最多的个数其实就是这个文件描述符数组的大小，可以通过ulimit -a指令查看open files数值。**
-
-![](c/未命名绘图 (1).png)
 
 > 文件IO(系统调用IO)操作：open,close,read,write,lseek（文件描述符的创建和对其的操作）
 
@@ -1088,7 +1097,7 @@ int main(int argc, char **argv)
     }
 
     close(dfd);
-    close(sfd);
+    close(sfd);  //最后关闭被依赖的文件描述符
    
     exit(0);
 }
@@ -1128,8 +1137,6 @@ int main()
 
 输出是：bbbaaa  并非是：ababab，因为write()是系统调用，立即执行，putchar()是标准IO操作，会先放置在缓冲区中，再调用系统调用IO一次性执行。
 
-![image-20230812103357907](c/image-20230812103357907.png)
-
 **两者间的转换：**
 
 fileno()函数可以将标准IO转换成系统调用IO
@@ -1148,8 +1155,6 @@ FILE *fdopen(int fd, const char *mode);
 time ./task
 
 time命令计算后面的任务执行时间
-
-![image-20230813152041422](c/image-20230813152041422.png)
 
 real记录的是真正的用户体验时间，大小是user＋sys时间还大出一点点，因为还要加上一些任务调度时间。
 
@@ -1283,7 +1288,7 @@ int main()
          close(fd);
     }
 /*******************************/
-    puts("hello!");   //要求不要输出在中断，输出在指定的文件内
+    puts("hello!");   //要求不要输出在终端，输出在指定的文件内
     
     exit(0);
 }
@@ -1426,7 +1431,7 @@ int main(int argc,char **argv)
 
 在文件的stat()结构体中，st_size并不等于st_blksize * st_blocks，一个文件的实际大小是st_blksize * st_blocks
 
-> 实例: 生成一个超级大的文件，但是大多数空间都是空的9
+> 实例: 生成一个超级大的文件，但是大多数空间都是空的
 
 ```c
 #include <stdio.h>
@@ -1602,7 +1607,7 @@ t位，给某一个二进制可执行命令设置当前t位，将某一个命令
 
 10、**更改当前工作路径**
 
-cd（chdir）、chroot(假根安全机制)、getcwd()获取当前工作路径
+cd（chdir）、chroot(假根安全机制)、getcwd()获取当前工作的路径
 
 11、**分析目录**、**读取目录内容**
 
@@ -1655,6 +1660,15 @@ closedir()
 readdir()
 
 > 实例：得到./etc目录下所有的文件（和上面的glob实现相同的功能）
+> 其中：`struct dirent` 是用于表示目录项的数据结构，通常在Unix和Linux系统中使用。这个结构通常包含有关文件和目录的信息，例如文件名、文件类型和文件的inode号等。`struct dirent` 是 POSIX 标准中定义的，用于在C程序中进行目录遍历和操作。
+>
+> struct dirent {
+>     ino_t d_ino;       // inode number
+>     off_t d_off;       // offset to the next dirent
+>     unsigned short d_reclen; // length of this record
+>     unsigned char d_type;   // type of file
+>     char d_name[];     // filename
+> };
 
 ```c
 #include <stdio.h>
@@ -1666,8 +1680,8 @@ readdir()
 int main()
 {
    DIR *dp;
-    struct dirent *cur; 
-    
+   struct dirent *cur;
+   
    dp = opendir(PAT);
    if(dp == NULL)
    {
@@ -1703,7 +1717,7 @@ telldir()
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <glob.h> 
+#include <glob.h>
 #include <string.h>
 
 #define PATHSIZE 1024
@@ -1888,8 +1902,6 @@ ctime()将time大整数转换成字符串
 
 int main(int argc,char **argv)
 
-
-
 2、**进程终止方式**
 
 `正常终止`：
@@ -1904,7 +1916,7 @@ int main(int argc,char **argv)
 
 `异常终止`：
 
-1. 调用abort()
+1. 调用abort()：`abort()` 是一个C标准库函数，用于立即终止程序的执行。它的主要目的是在程序发生严重错误或不可恢复的问题时，提供一种可靠的方法来终止程序的执行。
 2. 接到一个`信号`并终止
 3. 最后一个线程对其取消请求作出响应
 
@@ -1953,6 +1965,12 @@ getopt()
 getopt_long()
 
 > 实例：通过配置命令行参数去获得信息
+>
+> `localtime()` 是C标准库函数，用于将时间戳（表示自 1970 年 1 月 1 日以来的秒数）转换为本地时间表示。它将一个时间戳作为参数，并返回一个指向 `struct tm` 结构的指针，该结构包含了本地时间的各个组成部分，如年、月、日、时、分、秒等。原型如下：
+>
+> ```c
+> struct tm *localtime(const time_t *timer);
+> ```
 
 ```c
 #include <stdio.h>
@@ -2081,7 +2099,30 @@ dlerror()
 
 dlsym()查找符号
 
+```txt
+在C语言中，静态库（Static Library）和动态库（Dynamic Library）是两种用于组织和共享代码的不同方式，它们具有以下主要区别：
 
+链接时机：
+
+静态库：在编译时，静态库的代码会被完全复制到可执行文件中。这意味着可执行文件包含了静态库的所有代码，无需在运行时加载库。
+动态库：在编译时，只包含了动态库的链接信息，而实际的库代码在运行时从外部加载。
+文件大小：
+
+静态库：可执行文件的大小较大，因为它包含了静态库的所有代码。每个使用该库的可执行文件都会包含一份库的拷贝。
+动态库：可执行文件较小，因为它只包含了动态库的链接信息。实际的库代码只需在系统中保存一份，多个应用程序可以共享这一份库。
+更新和维护：
+
+静态库：如果需要更新静态库中的代码，所有依赖该库的应用程序都需要重新编译以使用新版本的库。
+动态库：如果需要更新动态库中的代码，只需替换库的实际文件即可，不需要重新编译依赖库的应用程序。
+内存使用：
+
+静态库：每个应用程序都加载一份库的代码，因此可能会浪费内存，尤其是在有多个应用程序使用相同库的情况下。
+动态库：库的代码在内存中只有一份，多个应用程序可以共享，从而节省内存。
+兼容性：
+
+静态库：可执行文件与特定版本的静态库绑定，如果库的API发生更改，可能需要修改和重新编译应用程序。
+动态库：可执行文件与库的链接信息绑定，不需要重新编译，只需确保库的API兼容性。
+```
 
 7、**函数跳转**
 
@@ -2234,7 +2275,7 @@ wait()
 
 waitpid()具有等待指定pid和配置是否要阻塞选项的操作
 
-常见的进程分配方式有分块、交叉分配法、池类算法
+常见的进程分配方式有`分块、交叉分配法、池类算法`
 
 为了使得各项资源或者计算任务分配平均，使用**交叉分配法**
 
@@ -2246,6 +2287,8 @@ waitpid()具有等待指定pid和配置是否要阻塞选项的操作
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <pthread.h>
+#include <sys/wait.h>
 
 #define LEFT 30000000
 #define RIGHT 30000200
@@ -2261,7 +2304,7 @@ int main()
     {
         pid = fork();
 
-        if (pid < 0)
+        if (pid < 0) //创建子进程失败
         {
             perror("fork()");
             for(int m = 0; m < n - 1; m++)
@@ -2275,7 +2318,6 @@ int main()
         {
             for(i = LEFT + n; i <= RIGHT; i += N)
             {
-
                 mark = 1;
                 for(j = 2; j < i / 2; j++)
                 {
@@ -2359,10 +2401,13 @@ int main()
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <pthread.h>
+#include <sys/wait.h>
 
 int main()
 {
-    
+    pid_t pid;
+
     puts("Begin!");
  
     fflush(NULL);
@@ -2376,8 +2421,8 @@ int main()
     
     if(pid == 0)
     {
-        execl("/bin/date","date","+%s",NULL);
-        perror("execl());
+        execl("/bin/date","date","+%s",NULL);  //替换子进程镜像
+        perror("execl()");
         exit(1);
     }
     
@@ -2501,8 +2546,6 @@ g+s -> 当某一个文件具有g+s的权限时，当别的用户使用该文件�
 
 所以当普通用户在执行passwd命令时，其实是在用root的身份在运行。
 
-
-
 `函数 `
 
 getuid()返回用户实际id
@@ -2618,7 +2661,7 @@ times() : time的命令就是通过它封装的
 clock_t times(struct tms *buf);
 
 "clock_t"
-其中clock_t是滴答数，1秒钟有多少个滴答数构成，是更为精确的计时方式
+//其中clock_t是滴答数，1秒钟有多少个滴答数构成，是更为精确的计时方式
 
 "结构体tms"
 struct tms {
@@ -2782,7 +2825,6 @@ void (* signal(int signum,void (*func)(int))) (int);
 
 int main()
 {
-
     int i;
   
     signal(SIGINT,SIG_IGN);    //忽略中断信号，该进程将不会被其他的中断所打断，将一直在中断输出字符
@@ -2798,12 +2840,13 @@ int main()
 
 ```
 
-> 实例2 ： 中断信号发生时，处理指定任务
+> 实例2：中断信号发生时，处理指定任务
 
 ```c
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
+#include <unistd.h>
 
 //中断处理函数
 static void int_handler(int s)
@@ -2827,7 +2870,6 @@ int main()
 
     exit(0);
 }
-
 ```
 
 `信号会打断阻塞的系统调用`
@@ -2851,7 +2893,7 @@ if(... < 0)  //表示某操作未成功
 
 
 
-**3、信号不可靠**
+`**3、信号不可靠**`
 
 不可靠指的是`信号的行为`不是信号的丢失
 
@@ -2869,15 +2911,9 @@ if(... < 0)  //表示某操作未成功
 
 **5、信号的响应过程**
 
-<img src="c/image-20230822135044830.png" alt="image-20230822135044830" style="zoom:50%;" />
-
 信号从收到到响应有一个不可避免的延时。
 
    某个时刻，进程接收到一个中断，此时进程将运行环境保存进入kernel，从kernel态转换成user态，在这期间，会进行mask和pending的按位与操作，以此来判断已经接收到了什么形式的信号，没有中断将不会判断是否接收到了信号，所有信号依赖于中断机制，按位与之后，如果有接收到信号，将会把对应的pending位和mask位全部置为0，再去将kernel里面的函数返回地址替换成信号中断处理函数的地址，执行完之后，再次进入kernel态，将原本的地址替换回来，将对应的mask位置为1，重新从kernel态进入User态，并按位与mask和pending，直到没有信号，最后返回原本的进程继续执行。
-
-> 信号响应过程图示
-
-<img src="c/image-20230822142542094.png" alt="image-20230822142542094" style="zoom:50%;" />
 
 `思考`：
 
@@ -2939,7 +2975,6 @@ int main()
     printf("%lld", count);
     exit(0);
 }
-
 ```
 
 
@@ -2968,6 +3003,7 @@ int main()
         count++;
     }
 
+    printf("%d",count);
     exit(0);
 }
 
@@ -2981,7 +3017,7 @@ system()
 
 sleep()不要在代码出现sleep()
 
-> 实例：实现缓慢cat，漏桶实例，在等待的时候就只是等待，每秒去看是否读到了数据，永远就是每秒十个字节的传输数据
+> :apple: 实例：实现缓慢cat，漏桶实例，在等待的时候就只是等待，每秒去看是否读到了数据，永远就是每秒十个字节的传输数据
 
 ```c
 #include <stdio.h>
@@ -2997,7 +3033,7 @@ sleep()不要在代码出现sleep()
 
 static volatile int loop = 0;
 
-static void alrm_handler(int s)
+static void alrm_handler(int s)   //中断信号处理函数
 {
     alarm(1);
     loop = 1;
@@ -3034,12 +3070,12 @@ int main(int argc, char **argv)
     while (1)
     {
         while (!loop)
-            pause();
+            pause();  //pause() 函数会使进程挂起，直到接收到一个信号为止
         loop = 0;
 
         while((len = read(sfd, buf, BUFSIZE)) < 0)
         {
-            if (errno == EINTR)
+            if (errno == EINTR)  //判断是否是由于中断导致的错误
             {
                 continue;
             }
@@ -3051,7 +3087,7 @@ int main(int argc, char **argv)
             break;
         pos = 0;
 
-        while (len > 0)
+        while (len > 0)  //坚持写入len个字节
         {
             ret = write(dfd, buf + pos, len);
             if (ret < 0)
@@ -3195,10 +3231,10 @@ int main(int argc, char **argv)
 #define BUFSIZE 1024
 #define BURST 100 // token上限值
 
-static volatile int token = 0;  //用来积攒读取操作的权限个数
+static volatile sig_atomic_t token = 0;  //用来积攒读取操作的权限个数，sig_atomic_t保证对于token的赋值是原子化的，因为对于token的赋值可能是基于多条机器指令完成，那么在这之间可能会对其有自增或者是自减的操作导致token得不到正确的值。
 
 int main(int argc, char **argv)
-{   
+{
     int sfd, dfd = 1;
     char buf[BUFSIZE];
     int len, ret, pos;
@@ -3448,7 +3484,7 @@ mytbf_t * mytbf_init(int cps,int burst);  //初始化令牌桶
 
 int mytbf_fetchtoken(mytbf_t*,int);   //申请多少个令牌桶，实际返回申请到的令牌桶个数
 
-int mytbf_returntokrn(mytbf_t*,int);  //将没有使用完的令牌桶归还，返回实际规划成功的令牌桶个数
+int mytbf_returntoken(mytbf_t*,int);  //将没有使用完的令牌桶归还，返回实际规划成功的令牌桶个数
 
 int mytbf_destroy(mytbf_t *);  //释放申请的令牌桶结构体
 
@@ -3459,41 +3495,230 @@ alarm()
 
 > 使用单一计时器，构造一组函数，实现任意数量计数器
 
+```c
 
+```
 
-**7、信号集**
+> **7、信号集**
 
+信号集类型：sigset_t
 
+sigemptyset();置空信号集
 
-**8、信号屏蔽字、pending集的处理**
+sigfillset();置满信号集
 
+sigaddset();向信号集中添加特定信号
 
+sigdelset();从信号集中删除特定信号
 
-**9、sigsuspend()、sigaction()->替换signal()、setitimer()->替换alarm()**
+sigismember();判断是否是集合当中的成员
 
+> 函数原型
 
+```c
+int sigemptyset(sigset_t *set);
+int sigfillset(sigset_t *set);
+int sigaddset(sigset_t *set, int signum);
+int sigdelset(sigset_t *set, int signum);
+int sigismember(const sigset_t *set, int signum);
+```
 
-**10、实时信号**
+> **8、信号屏蔽字、pending集的处理**
 
+`sigprocmask()` 是一个用于操作进程的信号屏蔽集的函数。它可以用来设置、修改或获取当前进程的信号屏蔽集。
 
+```c
+int sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
+```
 
+函数参数说明：
 
+- how
 
+  ：表示操作信号屏蔽集的方式，可以采用以下值之一：
 
+  - `SIG_BLOCK`：将 `set` 中的信号集添加到当前信号屏蔽集中。
+  - `SIG_UNBLOCK`：从当前信号屏蔽集中移除 `set` 中的信号集。
+  - `SIG_SETMASK`：用 `set` 中的信号集替代当前信号屏蔽集。
 
+- `set`：一个指向 `sigset_t` 类型的指针，它指定要执行操作的信号集。
 
+- `oldset`：一个指向 `sigset_t` 类型的指针，如果不为 NULL，则会将当前信号屏蔽集的值存储在 `oldset` 中，以便查询以前的信号屏蔽集状态。
 
+函数返回值：
 
+- 如果成功，返回 0。
+- 如果出现错误，返回 -1，并设置 `errno` 来指示错误的类型。
 
+`sigprocmask()` 函数通常用于控制进程中哪些信号被屏蔽，以确保在关键部分的代码中不会被中断。它在多线程和信号处理的上下文中经常使用，以确保信号的可靠处理。
 
+> 实例程序：
 
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <signal.h>
+#include <unistd.h>
 
+//中断处理函数
+static void int_handler(int s)
+{
+    write(1,"!",1);
+    write(1,"\n",1);
+}
 
+int main()
+{
+    int i,j;
+    sigset_t set,saveset;
 
+    signal(SIGINT,int_handler);   //在该程序未结束的时候，收到一个中断信号就去执行int_handler函数内部的动作
+    sigemptyset(&set);
+    sigaddset(&set,SIGINT);
+    //1、保存集合中信号的状态
+	sigprocmask(SIG_UNBLOCK,&set,&saveset);
+    for(j = 0; j < 100; j++)
+    {
+        //要求在下面的循环执行期间不受信号的影响，也就是说在此处将信号值阻塞住
+        sigprocmask(SIG_BLOCK,&set,NULL);
+        for (i = 0; i < 5; i++)
+        {
+            write(1, "*", 1);
+            sleep(1);
+        }
+        write(1,"\n",1);  //在打印完毕换行符之后再响应信号值
+        sigprocmask(SIG_UNBLOCK,&set,NULL);
+    }
+    //2、恢复到旧集合的状态
+    sigprocmask(SIG_UNBLOCK,&saveset,NULL);  //1和2的操作集合在进入和出去这个函数的时候它的状态是不发生改变的
+    exit(0);
+}
+```
 
+`输出的效果：`
 
+```txt
+root@b6508848aada:/workspace/linux_c/celery/11_9# ./sig 
+*****^C
+!
+**^C***
+!
+*^C^C*^C^C^C^C^C***
+!
+**^\Quit (core dumped)
+```
 
+可以看到在终端上首先会进行BLOCK内的操作，在执行完毕打印操作之后才会响应信号，同时不论打出多少个中断信号都只会响应一次。
 
+`可以依靠恢复旧集合的方式来达到同样的效果`
 
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <signal.h>
+#include <unistd.h>
 
+//中断处理函数
+static void int_handler(int s)
+{
+    write(1,"!",1);
+    write(1,"\n",1);
+}
+
+int main()
+{
+    int i,j;
+    sigset_t set,oset;
+
+    signal(SIGINT,int_handler);   //在该程序未结束的时候，收到一个中断信号就去执行int_handler函数内部的动作
+    sigemptyset(&set);
+    sigaddset(&set,SIGINT);
+    
+    for(j = 0; j < 100; j++)
+    {
+        //要求在下面的循环执行期间不受信号的影响，也就是说在此处将信号值阻塞住
+        sigprocmask(SIG_BLOCK,&set,&oset);
+        for (i = 0; i < 5; i++)
+        {
+            write(1, "*", 1);
+            sleep(1);
+        }
+        write(1,"\n",1);  //在打印完毕换行符之后再响应信号值
+        sigprocmask(SIG_SETMASK,&oset,NULL);
+    }
+    exit(0);
+}
+```
+
+> **9、函数替换**
+>
+> **sigsuspend()、sigaction()->替换signal()**
+>
+> **setitimer()->替换alarm()**
+
+`setitimer` 函数用于设置定时器，它允许程序在经过指定的时间后触发一个信号，优点是误差不累计。
+
+```c
+int setitimer(int which, const struct itimerval *new_value, struct itimerval *old_value);
+```
+
+```txt
+setitimer函数参数说明：
+
+which：指定要设置的定时器类型，可以取以下值之一：
+ITIMER_REAL：设置真实时间定时器，以指定的时间间隔触发 SIGALRM 信号。
+ITIMER_VIRTUAL：设置虚拟时间定时器，以指定的时间间隔触发 SIGVTALRM 信号。
+ITIMER_PROF：设置CPU时间定时器，以指定的时间间隔触发 SIGPROF 信号。
+new_value：一个指向 struct itimerval 结构的指针，包含了新的定时器设置。
+old_value：一个指向 struct itimerval 结构的指针，如果不为 NULL，则会将旧的定时器设置存储在其中。
+函数返回值：
+
+如果成功，返回 0。
+如果出现错误，返回 -1，并设置 errno 来指示错误的类型。
+```
+
+> 示例程序
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <signal.h>
+#include <sys/time.h>
+
+void timer_handler(int signo) {
+    printf("Timer expired! Signo: %d\n", signo);
+}
+
+int main() {
+    // 设置 SIGALRM 信号的处理函数
+    struct sigaction sa;
+    sa.sa_handler = timer_handler;
+    sa.sa_flags = 0;
+    sigaction(SIGALRM, &sa, NULL);
+
+    // 设置定时器
+    struct itimerval timer;
+    timer.it_value.tv_sec = 1;   // 初始延迟1秒
+    timer.it_value.tv_usec = 0;
+    timer.it_interval.tv_sec = 1; // 重复每1秒
+    timer.it_interval.tv_usec = 0;
+
+    if (setitimer(ITIMER_REAL, &timer, NULL) == -1) {
+        perror("setitimer");
+        exit(1);
+    }
+
+    // 让程序运行，等待定时器触发
+    while (1) {
+        // 此处可以执行其他操作
+    }
+
+    return 0;
+}
+
+```
+
+因为在不同的系统当中，sleep函数可能是由alarm()函数和pause()函数封装的，当在程序当中出现多个sleep()函数时，意味着会出现多个alarm()函数，当出现多个alarm()函数，系统只会生效最后一个alarm()函数，从而导致程序运行出错。
+
+> **10、实时信号**
 
