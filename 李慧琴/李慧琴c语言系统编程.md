@@ -2156,9 +2156,9 @@ rlimit结构体：包含软限制和硬限制，普通用户不能够增加自�
 
 进程号是顺次向下使用
 
-getpid()
+`getpid()`获取当前进程的标识符
 
-getppid()
+`getppid()`获取当前进程的父进程的标识符
 
 
 
@@ -2800,9 +2800,32 @@ syslog()  传递信息给syslogd
 
 closelog()  断开当前进程和syslogd的连接
 
+```c
+//示范程序
+#include <syslog.h>
+#include <stdio.h>
+
+int main() {
+    // 初始化日志系统
+    openlog("my_program", LOG_PID | LOG_CONS, LOG_USER);
+
+    // 使用 syslog() 输出日志消息
+    syslog(LOG_INFO, "This is an informational message.");
+    syslog(LOG_ERR, "An error occurred!");
+
+    // 输出到标准输出，演示不同的输出方式
+    printf("Printed to standard output.\n");
+
+    // 关闭日志系统
+    closelog();
+
+    return 0;
+}
+```
 
 
-# 五、信号和多线程
+
+# 五、信号
 
 `异步事件处理的两种方法`：查询法（当前异步事件发生比较密集），通知法（当前异步事件发生比较稀疏），严格意义上没有实际的通知法，同样需要一定机制去保证通知法正常执行。异步事件什么时候到来不知道，出现什么结果不清楚。
 
@@ -2893,7 +2916,7 @@ if(... < 0)  //表示某操作未成功
 
 
 
-`**3、信号不可靠**`
+> :a:`3、信号不可靠`
 
 不可靠指的是`信号的行为`不是信号的丢失
 
@@ -3603,7 +3626,7 @@ root@b6508848aada:/workspace/linux_c/celery/11_9# ./sig
 !
 **^C***
 !
-*^C^C*^C^C^C^C^C***
+*^C^C*^C^C^C^C^C*** //此时标准信号就出现了丢失的情况，因为现在mask位已经被视为1，不管后续来多少同样的信号都只会记录一次，所以只会被响应一次。
 !
 **^\Quit (core dumped)
 ```
@@ -3650,6 +3673,8 @@ int main()
 }
 ```
 
+`sigpending()函数：`扎进内核，取出pending集合的信息，会告诉使用者当前内核取到了什么样的信号
+
 > **9、函数替换**
 >
 > **sigsuspend()、sigaction()->替换signal()**
@@ -3658,8 +3683,12 @@ int main()
 
 `setitimer` 函数用于设置定时器，它允许程序在经过指定的时间后触发一个信号，优点是误差不累计。
 
+`sigaction()` 是一个用于设置信号处理函数的系统调用。
+
 ```c
 int setitimer(int which, const struct itimerval *new_value, struct itimerval *old_value);
+
+int sigaction(int signum, const struct sigaction *act, struct sigaction *oldact);
 ```
 
 ```txt
@@ -3675,6 +3704,26 @@ old_value：一个指向 struct itimerval 结构的指针，如果不为 NULL，
 
 如果成功，返回 0。
 如果出现错误，返回 -1，并设置 errno 来指示错误的类型。
+
+sigaction函数参数说明：
+signum：要捕获的信号的编号。
+act：指向 struct sigaction 结构的指针，该结构包含有关信号处理的信息。
+oldact：可选参数，指向 struct sigaction 结构的指针，用于存储先前的信号处理信息。
+struct sigaction 结构的定义如下：
+
+struct sigaction {
+    void (*sa_handler)(int);
+    void (*sa_sigaction)(int, siginfo_t *, void *);
+    sigset_t sa_mask;
+    int sa_flags;
+    void (*sa_restorer)(void);
+};
+sa_handler：指定了信号处理函数的地址。当 sa_flags 不包含 SA_SIGINFO 时，使用 sa_handler。
+sa_sigaction：指定了信号处理函数的地址。当 sa_flags 包含 SA_SIGINFO 时，使用 sa_sigaction。
+sa_mask：定义在信号处理期间要阻塞的信号集。
+sa_flags：指定了一些标志，例如 SA_RESTART，它表示系统调用应在信号处理完成后自动重新启动。
+sa_restorer：已弃用，用于设置一个恢复函数，目前不再使用。
+函数返回值为 0 表示成功，-1 表示错误，错误信息存储在 errno 中。
 ```
 
 > 示例程序
@@ -3720,5 +3769,648 @@ int main() {
 
 因为在不同的系统当中，sleep函数可能是由alarm()函数和pause()函数封装的，当在程序当中出现多个sleep()函数时，意味着会出现多个alarm()函数，当出现多个alarm()函数，系统只会生效最后一个alarm()函数，从而导致程序运行出错。
 
+`sigaction函数实例程序：`
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <signal.h>
+#include <unistd.h>
+
+// 自定义的信号处理函数，通过ctrl+c来触发中断信号
+void sigint_handler(int signo) {
+    printf("Caught SIGINT (Ctrl+C) signal. Exiting.\n");
+    exit(EXIT_SUCCESS);
+}
+
+int main() {
+    // 设置信号处理结构体
+    struct sigaction sa;
+    sa.sa_handler = sigint_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+
+    // 使用 sigaction() 设置信号处理函数
+    if (sigaction(SIGINT, &sa, NULL) == -1) {
+        perror("sigaction");
+        exit(EXIT_FAILURE);
+    }
+
+    // 主程序，等待信号
+    printf("Waiting for SIGINT (Ctrl+C) signal...\n");
+    while (1) {
+        sleep(1);  // 在等待信号时可以执行其他操作
+    }
+
+    return 0;
+}
+
+```
+
+在此示例中，程序设置了一个信号处理函数 `sigint_handler`，用于捕获 `SIGINT` 信号。当用户按下 Ctrl+C 时，会触发 `SIGINT` 信号，然后调用 `sigint_handler` 函数。函数输出一条消息并正常退出程序。
+
+`sigsuspend()函数：`在解除对一个信号集的阻塞状态之后马上进入等待信号的阶段，会使得这时间不会因为外来信号的干扰导致程序错过应该等待的信号。
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <signal.h>
+#include <unistd.h>
+
+//中断处理函数
+static void int_handler(int s)
+{
+    write(1,"!",1);
+    write(1,"\n",1);
+}
+
+int main()
+{
+    int i,j;
+    sigset_t set,saveset,oset;
+
+    signal(SIGINT,int_handler);   //在该程序未结束的时候，收到一个中断信号就去执行int_handler函数内部的动作
+    sigemptyset(&set);
+    sigaddset(&set,SIGINT);
+    //1、保存集合中信号的状态
+	sigprocmask(SIG_UNBLOCK,&set,&saveset);
+    for(j = 0; j < 100; j++)
+    {
+        //要求在下面的循环执行期间不受信号的影响，也就是说在此处将信号值阻塞住
+        sigprocmask(SIG_BLOCK,&set,&oset);
+        for (i = 0; i < 5; i++)
+        {
+            write(1, "*", 1);
+            sleep(1);
+        }
+        write(1,"\n",1);  //在打印完毕换行符之后再响应信号值
+        
+        sigsuspend(&oset); //相当于下面四步的原子化操作
+        /**        
+        sigset_t tmpset;
+        sigprocmask(SIG_SETMASK,&oset,&tmpset); //在这之间可能会有新的信号来到
+        pause(); //因为和上一步的操作是非原子化的，所以在这之间可能会因为外来的信号已经被响应，导致程序在pause()的位置被阻塞住。
+        sigprocmask(SIG_SETMASK,&tmpset,NULL); 
+        */
+
+    }
+    //2、恢复到旧集合的状态
+    sigprocmask(SIG_UNBLOCK,&saveset,NULL);  //1和2的操作集合在进入和出去这个函数的时候它的状态是不发生改变的
+    exit(0);
+}
+```
+
+单单利用pause()函数绝对完成不了一个信号驱动程序，原因在于如果不加上别的机制的话，他一定完成不了一个原子操作。
+
 > **10、实时信号**
+
+如果同时接收标准信号和实时信号，那么首先一定是先响应标准信号，实时信号是介于SIGRTMIN到SIGRTMAX之间，没有自己的一个默认动作，但是标准信号是存在自己特殊的动作表述，比如SIGIO、SIGPWR...除了SIGUSR1和SIGUSR2。
+
+`实时信号范例：`
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <signal.h>
+#include <unistd.h>
+
+#define MYRTSIG (SIGRTMIN+6)
+
+//中断处理函数
+static void mysig_handler(int s)
+{
+    write(1,"!",1);
+    write(1,"\n",1);
+}
+
+int main()
+{
+    int i,j;
+    sigset_t set,saveset,oset;
+
+    signal(MYRTSIG,mysig_handler);   //在该程序未结束的时候，收到一个中断信号就去执行int_handler函数内部的动作
+    sigemptyset(&set);
+    sigaddset(&set,MYRTSIG);
+    //1、保存集合中信号的状态
+	sigprocmask(SIG_UNBLOCK,&set,&saveset);
+    for(j = 0; j < 100; j++)
+    {
+        //要求在下面的循环执行期间不受信号的影响，也就是说在此处将信号值阻塞住
+        sigprocmask(SIG_BLOCK,&set,&oset);
+        for (i = 0; i < 5; i++)
+        {
+            write(1, "*", 1);
+            sleep(1);
+        }
+        write(1,"\n",1);  //在打印完毕换行符之后再响应信号值
+        
+        sigsuspend(&oset); //相当于下面四步的原子化操作
+    }
+    //2、恢复到旧集合的状态
+    sigprocmask(SIG_UNBLOCK,&saveset,NULL);  //1和2的操作集合在进入和出去这个函数的时候它的状态是不发生改变的
+    exit(0);
+}
+```
+
+在以上的程序当中，`实时信号是不存在丢失`的情况，但是标准信号是会被丢失的，除了信号响应是否存在顺序以及是否丢失，在别的方面，实时信号和标准信号是没有区别的。kill是发送信号的指令
+
+<img src="李慧琴c语言系统编程/image-20231110103931191.png" alt="image-20231110103931191" style="zoom:67%;" />
+
+实时信号的排队是存在上限的，使用ulimit -a可以查看上限数量：可以修改
+
+<img src="李慧琴c语言系统编程/image-20231110104237974.png" alt="image-20231110104237974" style="zoom:67%;" />
+
+> `多线程产生并发要比信号简单的多`
+
+# 六、线程
+
+### 1、线程的概念
+
+   一个正在运行的函数，一个进程空间内最少有一个函数在运行， 其实我们可以不以main函数作为程序入口，main线程也不必被成为主线程，因为它和其他线程是兄弟关系，没有上下级的关系。线程间通信比进程间通信要简单，因为在同一个空间内运行，多线程并发比多进程并发要简单。`posix线程是一套标准，而不是实现`，pthread_t类型是posix类型下的线程类型。一个进程下存在多个线程在工作，进程相当于线程的容器，在同一个进程内的线程以进程号（容器号）为起始来消耗进程号，`进程就是容器，用于承载多线程`。
+
+> `线程和信号不要混用！！！`（除非是小范围内）
+
+线程的安全实现要比信号的安全实现要简单。
+
+ `pthread_equal()`函数是用于比较两个线程标识符（`pthread_t` 类型）是否相等的函数。
+
+```c
+int pthread_equal(pthread_t thread1, pthread_t thread2);
+```
+
+`实例程序`:在编译链接的时候需要加上-pthread
+
+```c
+#include <pthread.h>
+#include <stdio.h>
+
+int main() {
+    pthread_t thread1, thread2;
+
+    // 创建线程并获取线程标识符
+    pthread_create(&thread1, NULL, myThreadFunction, NULL);
+    pthread_create(&thread2, NULL, myThreadFunction, NULL);
+
+    // 比较线程标识符
+    if (pthread_equal(thread1, thread2)) {
+        printf("Thread identifiers are equal.\n");
+    } else {
+        printf("Thread identifiers are not equal.\n");
+    }
+
+    return 0;
+}
+
+```
+
+`pthread_self()`函数获取当前线程的线程标识符
+
+```c
+pthread_t pthread_self(void);
+```
+
+`实例程序`
+
+```c
+#include <pthread.h>
+#include <stdio.h>
+
+void* myThreadFunction(void* arg) {
+    // 获取当前线程的线程标识符
+    pthread_t self = pthread_self();
+    printf("Thread ID: %lu\n", (unsigned long)self);
+
+    // 线程的其他操作...
+
+    return NULL;
+}
+
+int main() {
+    pthread_t thread1, thread2;
+
+    // 创建线程并启动
+    pthread_create(&thread1, NULL, myThreadFunction, NULL);
+    pthread_create(&thread2, NULL, myThreadFunction, NULL);
+
+    // 等待线程结束
+    pthread_join(thread1, NULL);
+    pthread_join(thread2, NULL);
+
+    return 0;
+}
+```
+
+### 2、线程的创建：
+
+`pthread_create()`函数用于创建一个新的线程。以下是该函数的原型：
+
+```c
+int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
+                   void *(*start_routine) (void *), void *arg);
+```
+
+**说明：**
+
+- 线程创建成功后，新线程将立即执行 `start_routine` 函数。
+- `pthread_create` 函数创建的线程是可结合的，可以使用 `pthread_join` 函数等待线程的结束。
+- 如果不再需要等待新线程结束，可以分离线程，使用 `pthread_detach` 函数。
+- 线程的属性可以通过 `pthread_attr_init` 和相关函数进行配置。
+
+`使用示例：`
+
+```c
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+void* myThreadFunction(void* arg) {
+    // 线程的工作内容
+    printf("Hello from the new thread!\n");
+
+    pthread_exit(NULL);//退出线程
+}
+
+int main() {
+    pthread_t myThread;
+
+    // 创建新线程
+    int result = pthread_create(&myThread, NULL, myThreadFunction, NULL);
+    
+    if (result != 0) {
+        fprintf(stderr,"pthread_create():%s\n",strerror(result));
+        exit(1);
+    }
+
+    // 主线程继续执行其他操作...
+
+    // 等待新线程结束
+    result = pthread_join(myThread, NULL); //NULL标识不关心返回值状态
+
+    if (result != 0) {
+        perror("Thread join failed");
+        exit(0);
+    }
+
+    exit(0);
+}
+
+```
+
+`线程的调度取决于调度器的策略`，有可能线程还没来得及被调度，作为它容器的进程已经结束了。
+
+### 线程的终止：
+
+`3种终止方式`
+
+1. 线程从启动例程中返回，返回值就是线程的退出码
+2. 线程可以被同一进程中的其他线程取消
+3. 线程调用pthread_exit()函数（正常结束），相当于进程中的exit()函数，线程收尸函数pthread_join()相当于进程中的wait()操作。
+
+`pthread_join` 函数用于等待一个指定的线程结束。以下是该函数的原型：
+
+```c
+int pthread_join(pthread_t thread, void **retval);
+```
+
+`使用实例`
+
+```c
+#include <pthread.h>
+#include <stdio.h>
+
+void* myThreadFunction(void* arg) {
+    // 线程的工作内容
+    printf("Hello from the new thread!\n");
+    
+    // 返回值示例
+    int *result = malloc(sizeof(int));
+    *result = 42;
+    pthread_exit(result);
+}
+
+int main() {
+    pthread_t myThread;
+    void* threadResult;
+
+    // 创建新线程
+    int result = pthread_create(&myThread, NULL, myThreadFunction, NULL);
+    
+    if (result != 0) {
+        perror("Thread creation failed");
+        return 1;
+    }
+
+    // 等待新线程结束，并获取返回值
+    result = pthread_join(myThread, &threadResult); 
+
+    if (result != 0) {
+        perror("Thread join failed");
+        return 1;
+    }
+
+    printf("Thread returned: %d\n", *(int*)threadResult);
+
+    // 释放返回值的内存
+    free(threadResult);
+
+    return 0;
+}
+
+```
+
+### 栈清理：
+
+以下两个函数相当于进程中的钩子函数`atexit()`
+
+pthread_cleanup_push()相当于挂到钩子上
+
+pthread_cleanup_pop()相当于从钩子上取下来执行
+
+函数原型：
+
+```c
+void pthread_cleanup_push(void (*routine)(void*), void *arg);
+```
+
+**参数：**
+
+- `routine`：指定的清理处理程序函数的指针。
+- `arg`：传递给清理处理程序函数的参数。
+
+**说明：**
+
+- `pthread_cleanup_push` 用于将清理处理程序推入线程的清理处理程序堆栈。
+- 在 `pthread_cleanup_push` 和相应的 `pthread_cleanup_pop` 之间的代码块中，可以多次调用 `pthread_cleanup_push` 来添加多个清理处理程序。
+
+```c
+void pthread_cleanup_pop(int execute);
+```
+
+**参数：**
+
+- `execute`：一个整数，如果为非零，表示执行清理处理程序；如果为零，则表示不执行。
+
+**说明：**
+
+- `pthread_cleanup_pop` 用于从线程的清理处理程序堆栈中弹出一个清理处理程序，并决定是否执行它。
+- 在调用 `pthread_cleanup_pop` 之前，必须通过 `pthread_cleanup_push` 添加了一个或多个清理处理程序。
+
+**注意：**
+
+- 在实际编程中，`pthread_cleanup_push` 和 `pthread_cleanup_pop` 主要用于确保在线程退出时执行一些清理操作，而不是作为一种常规的编程实践。
+- 在现代的多线程编程中，更推荐使用 RAII（资源获取即初始化）和智能指针等技术，而不是依赖于 `pthread_cleanup_push` 和 `pthread_cleanup_pop`。
+- `pthread_cleanup_push` 和 `pthread_cleanup_pop`应该成对出现
+
+`实例程序`
+
+```c
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+// 清理处理程序的参数结构
+struct CleanUpArgs {
+    char *message;
+    int *counter;
+};
+
+// 清理处理程序函数
+void cleanUpHandler(void *arg) {
+    struct CleanUpArgs *cleanupArgs = (struct CleanUpArgs *)arg;
+    printf("Cleaning up: %s\n", cleanupArgs->message);
+
+    // 在这里执行一些清理操作，例如释放资源
+    free(cleanupArgs->message);
+    free(cleanupArgs);
+}
+
+// 线程函数
+void* myThreadFunction(void* arg) {
+    // 创建清理处理程序参数
+    struct CleanUpArgs *cleanupArgs = (struct CleanUpArgs *)malloc(sizeof(struct CleanUpArgs));
+    cleanupArgs->message = "Thread cleanup";
+    cleanupArgs->counter = (int *)arg;
+
+    // 将清理处理程序推入堆栈
+    pthread_cleanup_push(cleanUpHandler, cleanupArgs);
+
+    // 线程的工作内容
+    for (int i = 0; i < 5; ++i) {
+        printf("Thread working... (%d)\n", *cleanupArgs->counter);
+        (*cleanupArgs->counter)++;
+        sleep(1);
+    }
+
+    // 如果线程正常退出，清理处理程序将被执行
+    // 如果线程通过pthread_exit()退出，清理处理程序也会执行
+    // 如果线程因为取消而退出，清理处理程序不会执行
+
+    // 弹出清理处理程序
+    pthread_cleanup_pop(1);
+
+    // 线程的其他操作...
+
+    return NULL;
+}
+
+int main() {
+    pthread_t myThread;
+    int counter = 0;
+
+    // 创建新线程
+    int result = pthread_create(&myThread, NULL, myThreadFunction, &counter);
+
+    if (result != 0) {
+        perror("Thread creation failed");
+        return 1;
+    }
+
+    // 主线程继续执行其他操作...
+
+    // 等待新线程结束
+    result = pthread_join(myThread, NULL);
+
+    if (result != 0) {
+        perror("Thread join failed");
+        return 1;
+    }
+
+    printf("Final counter value: %d\n", counter);
+
+    return 0;
+}
+
+```
+
+### 线程的取消选项：
+
+`pthread_cancel` 函数用于请求取消指定的线程。以下是该函数的原型：
+
+```c
+int pthread_cancel(pthread_t thread);
+```
+
+可以先取消再对线程进行收尸操作。
+
+**说明：**
+
+- `pthread_cancel` 函数用于向指定线程发送取消请求，请求线程退出。
+- 实际上，`pthread_cancel` 只是向线程发送一个取消请求，线程是否真正取消取决于线程是否响应取消请求。
+- 取消请求的处理取决于线程的取消状态和取消点设置。
+- 如果线程成功取消，它将执行清理处理程序（如果有），然后退出。
+
+`示范程序：`
+
+```c
+#include <pthread.h>
+#include <stdio.h>
+
+void* myThreadFunction(void* arg) {
+    // 线程的工作内容
+    while (1) {
+        printf("Thread working...\n");
+        // 模拟长时间运行的任务
+        usleep(500000);
+    }
+
+    return NULL;
+}
+
+int main() {
+    pthread_t myThread;
+
+    // 创建新线程
+    int result = pthread_create(&myThread, NULL, myThreadFunction, NULL);
+
+    if (result != 0) {
+        perror("Thread creation failed");
+        return 1;
+    }
+
+    // 主线程继续执行其他操作...
+
+    // 发送取消请求
+    result = pthread_cancel(myThread);
+
+    if (result != 0) {
+        perror("Thread cancel failed");
+        return 1;
+    }
+
+    // 等待新线程结束
+    result = pthread_join(myThread, NULL);
+
+    if (result != 0) {
+        perror("Thread join failed");
+        return 1;
+    }
+
+    printf("Thread canceled.\n");
+
+    return 0;
+}
+```
+
+`pthread_setcancelstate()->设置取消选项：`允许和不允许。
+
+`pthread_setcanceltype()——>设置取消的类型`。如果是允许取消的话，又分为异步取消和推迟取消（推迟到cancel点再响应）。cancel点是：都是可能引发阻塞的系统调用。
+
+`pthread_testcancel()->就是设置一个取消点`，因为在一些程序中是没有取消点（系统调用）的。
+
+线程分离：
+
+pthread_detach()函数用于将指定的线程标识符所代表的线程标记为分离状态，从而允许系统在线程退出后立即回收其资源，无需等待其他线程调用 `pthread_join`。以下是该函数的原型：
+
+```c
+int pthread_detach(pthread_t thread);
+```
+
+**说明：**
+
+- 将线程标记为分离状态后，线程退出时会自动释放其资源，无需其他线程调用 `pthread_join`。
+- 分离状态的线程不会产生僵尸线程，它的退出状态将被系统自动处理。
+- 如果线程已经处于分离状态，再次调用 `pthread_detach` 将返回错误，但不会产生其他影响。
+
+`实例程序`
+
+```c
+#include <pthread.h>
+#include <stdio.h>
+
+void* myThreadFunction(void* arg) {
+    // 线程的工作内容...
+
+    return NULL;
+}
+
+int main() {
+    pthread_t myThread;
+
+    // 创建新线程
+    int result = pthread_create(&myThread, NULL, myThreadFunction, NULL);
+
+    if (result != 0) {
+        perror("Thread creation failed");
+        return 1;
+    }
+
+    // 将线程标记为分离状态
+    result = pthread_detach(myThread);
+
+    if (result != 0) {
+        perror("Thread detach failed");
+        return 1;
+    }
+
+    // 主线程继续执行其他操作...
+
+    return 0;
+}
+```
+
+
+
+### 3、线程同步：
+
+### 4、线程属性：
+
+### 线程同步的属性：
+
+### 5、重入
+
+### 线程和信号关系：
+
+### 线程与fork的关系：
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
