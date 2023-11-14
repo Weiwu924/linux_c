@@ -4368,11 +4368,202 @@ int main() {
 }
 ```
 
+### 3、线程竞争和同步：
+
+线程竞争问题
+
+> 使用201个线程筛选质数（线程竞争实例）
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <string.h>
+
+#define LEFT 30000000
+#define RIGHT 30000200
+#define THRNUM (RIGHT - LEFT + 1)
+
+static void *thr_prime(void *p);
+
+int main()
+{
+    int i,err;
+    pthread_t tid[THRNUM];
+
+    for (i = LEFT; i <= RIGHT; i++)
+    {
+        err = pthread_create(tid + (i - LEFT), NULL, thr_prime, &i); 
+        if (err)
+        {
+            fprintf(stderr, "pthread_create():%s\n", strerror(err));
+            exit(1);
+        }
+    }
+
+    for (i = LEFT; i <= RIGHT; i++)
+    {
+        pthread_join(tid[i - LEFT], NULL);
+    }
+
+    exit(0);
+}
+
+static void *thr_prime(void *p)
+{
+    int i, mark, j;
+    i = *(int *)p; //在这里使用的是地址传参，所有线程的指针全部指向同一个i的地址，造成竞争问题。
+    mark = 1;
+
+    for (j = 2; j < i / 2; j++)
+    {
+        if (i % j == 0)
+        {
+            mark = 0;
+            break;
+        }
+    }
+
+    if (mark)
+        printf("%d is a primer.\n", i);
+
+    pthread_exit(NULL);
+}
+```
+
+> 对上面的程序进行改进
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <string.h>
+
+#define LEFT 30000000
+#define RIGHT 30000200
+#define THRNUM (RIGHT - LEFT + 1)
+
+struct thr_arg_st
+{
+    int n;
+};
+
+static void *thr_prime(void *p);
+
+int main()
+{
+    int i, err;
+    pthread_t tid[THRNUM];
+    struct thr_arg_st *p;
+    void* ptr;
+
+    for (i = LEFT; i <= RIGHT; i++)
+    {
+
+        p = malloc(sizeof(*p));  //使得各个线程指向的是不同的空间
+        if (p == NULL)
+        {
+            perror("malloc()");
+            exit(1);
+        }
+        
+        p->n = i;
+        
+        err = pthread_create(tid + (i - LEFT), NULL, thr_prime, p);
+        if (err)
+        {
+            fprintf(stderr, "pthread_create():%s\n", strerror(err));
+            exit(1);
+        }
+    }
+
+    for (i = LEFT; i <= RIGHT; i++)
+    {
+        pthread_join(tid[i - LEFT], &ptr);
+        free(ptr); //值已经取走，必须马上释放空间
+    }
+
+    exit(0);
+}
+
+static void *thr_prime(void *p)
+{
+    int i, mark, j;
+    i = ((struct thr_arg_st *)p)->n;
+    
+    mark = 1;
+
+    for (j = 2; j < i / 2; j++)
+    {
+        if (i % j == 0)
+        {
+            mark = 0;
+            break;
+        }
+    }
+
+    if (mark)
+        printf("%d is a primer.\n", i);
+
+    pthread_exit(p);  //拿回p指针,在join函数中进行拿取并free
+}
+```
+
+`当前空间下能够创建线程的个数取决于外在的资源量`，比如栈空间大小以及用户态能够使用的总空间，还有线程标识符的个数。
+
+所以上述代码还需要修改
+
+![image-20231114102935889](李慧琴c语言系统编程/image-20231114102935889.png)
+
+上面的THRNUM代表着需要创建多少个线程来完成筛选质数的任务，当LEFT、RIGHT的间距增大的时候，肯定会有超过能够创建线程上限的问题。
+
+`所以需要采取方法进行对任务进行分配`
+
+1. 池类算法
+2. 交叉分配法
+3. 分块
+
+> 线程同步
+
+`互斥量`
+
+互斥锁：
+
+静态初始化`pthread_mutex_t`
+
+```c
+pthread_mutex_t my_mutex = PTHREAD_MUTEX_INITIALIZER;
+```
+
+动态初始化`pthread_mutex_init`函数原型如下：
+
+```c
+//初始化某个互斥量
+int pthread_mutex_init(pthread_mutex_t *mutex, const pthread_mutexattr_t *attr);
+//销毁某个互斥量
+int pthread_mutex_destroy(pthread_mutex_t *mutex);
+```
+
+```c
+pthread_mutex_t my_mutex;
+pthread_mutex_init(&my_mutex, NULL);
+```
+
+`限制和解除限制操作某个资源`
+
+```c
+//阻塞式抢锁
+pthread_mutex_lock(pthread_mutex_t *mutex)
+//非阻塞式抢锁
+pthread_mutex_trylock(pthread_mutex_t *mutex)  
+pthread_mutex_unlock(pthread_mutex_t *mutex)
+```
 
 
-### 3、线程同步：
 
 ### 4、线程属性：
+
+
 
 ### 线程同步的属性：
 
