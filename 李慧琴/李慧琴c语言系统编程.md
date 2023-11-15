@@ -3963,6 +3963,22 @@ int main() {
 
 ```
 
+makefile文件：
+
+```makefile
+target=primer
+CC=gcc
+CFLAGS+=-c	-Wall	-pthread
+LDFLAGS+=-pthread
+OBJS=main.o
+
+$(target):$(OBJS)
+	CC	$^	-o	$@
+
+%.o:%.c
+	CC	$^	$(CFLAGS)	-o	$@
+```
+
 `pthread_self()`函数获取当前线程的线程标识符
 
 ```c
@@ -4013,7 +4029,7 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
 
 - 线程创建成功后，新线程将立即执行 `start_routine` 函数。
 - `pthread_create` 函数创建的线程是可结合的，可以使用 `pthread_join` 函数等待线程的结束。
-- 如果不再需要等待新线程结束，可以分离线程，使用 `pthread_detach` 函数。
+- 如果不再需要等待新线程结束，可以分离线程，使用 `pthread_detach` 函数，使得线程自己消亡。
 - 线程的属性可以通过 `pthread_attr_init` 和相关函数进行配置。
 
 `使用示例：`
@@ -4393,7 +4409,7 @@ int main()
 
     for (i = LEFT; i <= RIGHT; i++)
     {
-        err = pthread_create(tid + (i - LEFT), NULL, thr_prime, &i); 
+        err = pthread_create(tid + (i - LEFT), NULL, thr_prime, &i);
         if (err)
         {
             fprintf(stderr, "pthread_create():%s\n", strerror(err));
@@ -4555,11 +4571,140 @@ pthread_mutex_init(&my_mutex, NULL);
 //阻塞式抢锁
 pthread_mutex_lock(pthread_mutex_t *mutex)
 //非阻塞式抢锁
-pthread_mutex_trylock(pthread_mutex_t *mutex)  
+pthread_mutex_trylock(pthread_mutex_t *mutex)
+//对某个锁住的资源进行解锁
 pthread_mutex_unlock(pthread_mutex_t *mutex)
 ```
 
+`临界区：同一时间只允许一个用户操作的文件`，对于互斥锁，实际上它所限制的是某一段代码是否能够执行来去限制某个资源是否能够被使用。
 
+> `实例代码1：`使用互斥锁控制读写同一份文件
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <string.h>
+#include <unistd.h>
+
+#define THRNUM 20
+#define FNAME "/workspace/linux_c/celery/11_15/out"
+#define LINESIZE 1024
+
+static pthread_mutex_t mut = PTHREAD_MUTEX_INITIALIZER;
+
+static void *thr_add(void *p)
+{
+    FILE *fp;
+    char linebuf[LINESIZE];
+
+    fp = fopen(FNAME, "r+");
+    if (fp == NULL)
+    {
+        perror("fopen");
+        exit(1);
+    }
+
+    //以下是需要限制访问的临界区资源（对文件的读写操作），需要上锁
+    pthread_mutex_lock(&mut);
+    fgets(linebuf, LINESIZE, fp);
+    fseek(fp, 0, SEEK_SET);
+    sleep(1);
+    fprintf(fp, "%d\n", atoi(linebuf) + 1);
+    fclose(fp);
+    pthread_mutex_unlock(&mut);
+
+    pthread_exit(NULL);
+}
+
+int main()
+{
+    int i, err;
+    pthread_t tid[THRNUM];
+
+    for (i = 0; i < THRNUM; i++)
+    {
+        err = pthread_create(tid + 1, NULL, thr_add, NULL);
+        if (err)
+        {
+            fprintf(stderr, "pthread_create():%s\n", strerror(err));
+            exit(1);
+        }
+    }
+
+    for (i = 0; i < THRNUM; i++)
+        pthread_join(tid[i], NULL);
+        
+
+    pthread_mutex_destroy(&mut);
+
+    exit(0);
+}
+
+```
+
+> `实例代码2：`有四个线程分别往终端顺序输出abcd (使用互斥锁链)
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <string.h>
+#include <unistd.h>
+
+#define THRNUM 4
+
+static pthread_mutex_t mutex[THRNUM];
+
+static int next(int n)
+{
+    if ((n + 1) == THRNUM)
+        return 0;
+    else
+        return (n + 1);
+}
+
+static void *thr_func(void *p)
+{
+    int n = (int)p;
+    int c = 'a' + n;
+    while (1)
+    {
+        pthread_mutex_lock(mutex + n); //锁上自己
+        write(1, &c, 1);   //打印自己
+        pthread_mutex_unlock(mutex + next(n)); //解开下一个打印的锁
+    }
+
+    pthread_exit(NULL);
+}
+
+int main()
+{
+    int i, err;
+    pthread_t tid[THRNUM];
+
+    for (i = 0; i < THRNUM; i++)
+    {
+        pthread_mutex_init(mutex + i, NULL);
+        pthread_mutex_lock(mutex + i);
+        err = pthread_create(tid + i, NULL, thr_func, (void *)i);
+        if (err)
+        {
+            fprintf(stderr, "pthread_create:%s\n", strerror(err));
+            exit(1);
+        }
+    }
+
+    pthread_mutex_unlock(mutex + 0);  //解开打印a的互斥锁
+
+    alarm(3); // 3秒后强制杀死进程
+
+    for (i = 0; i < THRNUM; i++)
+        pthread_join(tid[i], NULL);
+
+    exit(0);
+}
+```
 
 ### 4、线程属性：
 
