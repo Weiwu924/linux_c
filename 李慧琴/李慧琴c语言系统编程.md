@@ -4706,23 +4706,201 @@ int main()
 }
 ```
 
+读锁->相当于是共享锁   写锁->相当于是互斥锁
+
 ### 4、线程属性：
 
+`pthread_attr_init` 函数是用于初始化线程属性对象的 POSIX 线程库函数，
 
+`pthread_attr_destroy` 函数是用于销毁线程属性对象的 POSIX 线程库函数。其原型如下：
+
+```c
+#include <pthread.h>
+
+int pthread_attr_init(pthread_attr_t *attr);
+int pthread_attr_destroy(pthread_attr_t *attr);
+```
+
+> 检查一个机器中能够创建的线程最大数：
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+
+void *func(void *p)
+{
+    while(1)
+        pause();
+    pthread_exit(NULL);
+}
+
+int main()
+{
+    int i;
+    int err;
+    pthread_t tid[1024];
+
+    for (i = 0; ;i++)
+    {
+        err = pthread_create(&tid[i], NULL, func, NULL);
+        if (err)
+        {
+            fprintf(stdout, "pthread_create()。。。");
+            break;
+        }
+    }
+
+    printf("%d\n", i);
+
+    for (int j = 0; j <= i; j++)
+    {
+        pthread_join(&tid[j],NULL);
+    }
+
+    return 0;
+}
+```
+
+设置线程的属性：
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+
+void *func(void *p)
+{
+    while (1)
+        pause();
+    pthread_exit(NULL);
+}
+
+int main()
+{
+    int i;
+    int err;
+    pthread_t tid;
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setstacksize(&attr, 1024 * 1024);
+
+    err = pthread_create(&tid, &attr, func, NULL);
+    if (err)
+    {
+        fprintf(stdout, "pthread_create()。。。");
+    }
+
+    pthread_join(&tid, NULL);
+
+    pthread_attr_destroy(&attr);
+
+    return 0;
+}
+```
+
+更多有关线程的属性设置函数，在man手册的pthread_attr_init的see also方面
 
 ### 线程同步的属性：
 
+互斥量属性：
+pthread_mutexattr_init();
+
+pthread_mutexattr_destory();
+
+ //是否是跨进程起作用
+
+pthread_mutexattr_getpshared();
+
+pthread_mutexattr_setpshared(); 
+
+创建一个子进程
+
+clone();
+
+pthread_mutexattr_gettype();
+
+pthread_mutexattr_settype();
+
+![image-20231205102740599](李慧琴c语言系统编程/image-20231205102740599.png)
+
+条件变量:
+
+`pthread_cond_init` 函数是 POSIX 线程库中用于初始化条件变量（condition variable）的函数。条件变量通常与互斥锁一起使用，用于线程间的同步。其原型如下：
+
+```c
+#include <pthread.h>
+
+int pthread_cond_init(pthread_cond_t *restrict cond, const pthread_condattr_t *restrict attr);
+```
+
+这个函数用于初始化条件变量对象，以便后续的使用。条件变量是在多线程编程中用于线程间通信的一种机制，它允许一个线程在某个条件不满足时进入休眠状态，等待其他线程发出信号（通过 `pthread_cond_signal` 或 `pthread_cond_broadcast` 函数）来唤醒它。
+
+- `cond`：指向要初始化的条件变量对象的指针。
+- `attr`：指向条件变量属性对象的指针，通常可以设置为 `NULL`，表示使用默认属性。条件变量的属性对象目前很少使用，因此一般情况下会将其设置为 `NULL`。
+
+```c
+#include <pthread.h>
+#include <stdio.h>
+
+int main() {
+    pthread_cond_t cond;
+
+    // 初始化条件变量对象
+    if (pthread_cond_init(&cond, NULL) != 0) {
+        perror("pthread_cond_init");
+        return 1;
+    }
+
+    // 在这里可以使用 cond 对象进行线程同步操作
+
+    // 销毁条件变量对象，释放资源
+    if (pthread_cond_destroy(&cond) != 0) {
+        perror("pthread_cond_destroy");
+        return 1;
+    }
+
+    // 在这之后，cond 对象不再可用
+
+    return 0;
+}
+```
+
 ### 5、重入
 
+`多线程中的IO操作，目前使用的IO操作都已经实现了多线程的并发，即他们在使用时候会先lock住，再进行后续的操作。`
+
+当然与之匹配的unlock的函数，也已经定义：
+比如getchar_unlock(void);这种函数在尾部会加上unlock标识，但是在多进程中使用是不安全的。
+
 ### 线程和信号关系：
+
+`不建议混用`
+
+pthread_sigmask() 设置mask位
+
+pthread_kill()  以线程为单位，发送一个信号
 
 ### 线程与fork的关系：
 
 
+​	线程和`fork`是两种不同的并发机制，分别用于创建并发执行的进程和线程，线程适合在同一进程中共享数据和并发执行任务，而`fork`适合创建独立的进程，每个进程执行不同的任务。选择线程还是`fork`取决于具体的应用需求和设计考虑。下面是关于线程和`fork`之间的一些主要区别：
 
-
-
-
+1. **创建方式**：
+   - **线程：** 线程是在同一进程中创建的轻量级执行单元。线程共享进程的地址空间，文件描述符等资源，可以访问相同的数据。线程是由调用线程库的程序创建和管理的。
+   - **`fork`：** `fork` 是创建一个新的进程的系统调用。新的进程是原始进程（父进程）的副本，包括它的地址空间、文件描述符等。这两个进程在执行时是完全独立的，它们之间不共享内存。
+2. **并发性**：
+   - **线程：** 线程是在同一进程中并发执行的。线程之间可以共享相同的数据，通过共享内存来进行通信。因为它们共享进程的资源，线程之间的通信相对容易。
+   - **`fork`：** `fork` 创建的两个进程是独立的，它们之间的通信相对复杂，通常需要使用进程间通信（IPC）机制，如管道、消息队列、共享内存等。
+3. **开销**：
+   - **线程：** 线程通常比进程轻量级，因为它们共享相同的地址空间和其他资源。线程的创建、切换和销毁开销相对较小。
+   - **`fork`：** `fork` 创建新进程的开销较大，因为它需要复制父进程的整个地址空间。
+4. **共享状态**：
+   - **线程：** 线程共享相同的地址空间，因此它们可以直接访问相同的数据。这使得线程之间的通信更为方便。
+   - **`fork`：** `fork` 创建的两个进程有各自独立的地址空间，它们之间的通信需要额外的机制。
+5. **数据同步**：
+   - **线程：** 线程之间需要进行显式的同步来避免竞态条件和确保数据的一致性。通常使用互斥锁、条件变量等机制。
+   - **`fork`：** `fork` 创建的进程之间不需要显式同步，因为它们有独立的地址空间。但是，如果它们需要通信，仍然需要使用 IPC 机制进行同步。
 
 
 
