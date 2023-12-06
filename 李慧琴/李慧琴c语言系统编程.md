@@ -4902,7 +4902,206 @@ pthread_kill()  以线程为单位，发送一个信号
    - **线程：** 线程之间需要进行显式的同步来避免竞态条件和确保数据的一致性。通常使用互斥锁、条件变量等机制。
    - **`fork`：** `fork` 创建的进程之间不需要显式同步，因为它们有独立的地址空间。但是，如果它们需要通信，仍然需要使用 IPC 机制进行同步。
 
+# 七、高级IO
 
+## 1、非阻塞IO
+
+`为什么需要非阻塞？`
+
+```txt
+在C语言编程中，使用非阻塞I/O（Input/Output）有几个主要的原因：
+
+提高并发性能： 阻塞I/O会导致程序在等待I/O操作完成时被阻塞，这会浪费CPU的处理能力。使用非阻塞I/O可以使程序在等待I/O的同时执行其他任务，提高并发性能，特别是在多线程或多进程的环境中。
+
+响应性： 非阻塞I/O可以使程序更加灵活地响应事件。在阻塞I/O中，当一个I/O操作发生时，程序将被阻塞直到操作完成。而在非阻塞I/O中，程序可以轮询或通过回调等机制来检查I/O状态，从而更快地响应事件。
+
+避免死锁： 在多线程或多进程的程序中，阻塞I/O可能导致死锁。如果一个线程或进程在等待I/O时被阻塞，而其他线程或进程持有了它需要的资源，就可能发生死锁。非阻塞I/O可以一定程度上减少这种情况的发生。
+
+实时性： 在一些实时系统中，对事件的快速响应是至关重要的。非阻塞I/O能够更好地支持实时性需求，因为它允许程序在等待I/O时执行其他任务。
+
+在C语言中，可以通过使用系统调用如fcntl或ioctl来设置文件描述符为非阻塞模式，或者使用专门的库函数如select、poll、epoll等来实现非阻塞I/O。这些机制允许程序轮询或异步地处理I/O事件，从而提高程序的性能和响应性。
+```
+
+## 2、有限状态机编程
+
+`简单流程`：如果一个程序的自然流程是结构化的，就是简单流程
+
+`复杂流程`：如果一个程序的自然流程是非结构化的，就是复杂流程
+
+> 使用有限状态机实现数据中继
+
+`先读取后写的有限状态机模型`
+
+<img src="李慧琴c语言系统编程/image-20231206103740565.png" alt="image-20231206103740565" style="zoom: 33%;" />
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <unistd.h>
+
+#define TTY1 "../dev/tty11"
+#define TTY2 "../dev/tty12"
+#define BUFSIZE 1024
+
+
+// 定义状态机具有的各个状态
+enum
+{
+    STATE_R = 1,
+    STATE_W,
+    STATE_Ex,
+    STATE_T
+};
+
+// 定义状态机模型结构体
+struct fsm_st
+{
+    int state;
+    int sfd;
+    int dfd;
+    int len;
+    int pos;
+    char *errstring;
+    char buf[BUFSIZE];
+};
+
+static void fsm_driver(struct fsm_st *fsm)
+{
+
+    int ret;
+
+    switch (fsm->state)
+    {
+    case STATE_R:
+        fsm->len = read(fsm->sfd, fsm->buf, BUFSIZE);
+        if (fsm->len == 0)
+            fsm->state = STATE_T;
+        else if (fsm->len < 0)
+        {
+            if (errno == EAGAIN)
+                fsm->state = STATE_R;
+            else
+            {
+                fsm->errstring = "read()";
+                fsm->state = STATE_Ex;
+            }
+        }
+        else
+        {
+            fsm->pos = 0;
+            fsm->state = STATE_W;
+        }
+        break;
+    case STATE_W:
+        ret = write(fsm->dfd, fsm->buf + fsm->pos, fsm->len);
+        if (ret < 0)
+        {
+            if (errno == EAGAIN)
+                fsm->state = STATE_W;
+            else
+            {
+                fsm->errstring = "write()";
+                fsm->state = STATE_Ex;
+            }
+        }
+        else
+        {
+            fsm->pos += ret;
+            fsm->len -= ret;
+            if (fsm->len == 0)
+                fsm->state = STATE_R;
+            else
+                fsm->state = STATE_W;
+        }
+
+        break;
+    case STATE_Ex:
+        perror(fsm->errstring);
+        fsm->state = STATE_T;
+        break;
+    case STATE_T:
+        /* code */
+        // 进程结束
+        break;
+    default:
+        // 进程结束
+        abort();
+        break;
+    }
+}
+
+void relay(int fd1, int fd2)
+{
+    struct fsm_st fsm_12, fsm_21; // 定义两个状态机，一个读左写右，一个读右写左
+
+    int fd1_save = fcntl(fd1, F_GETFL);         // 获取文件描述符并保存
+    fcntl(fd1, F_SETFL, fd1_save | O_NONBLOCK); // 设置文件描述符
+
+    int fd2_save = fcntl(fd2, F_GETFL);
+    fcntl(fd2, F_SETFL, fd2_save | O_NONBLOCK);
+
+    fsm_12.state = STATE_R;
+    fsm_12.sfd = fd1;
+    fsm_12.dfd = fd2;
+
+    fsm_21.state = STATE_R;
+    fsm_21.sfd = fd2;
+    fsm_21.dfd = fd1;
+
+    while (fsm_21.state != STATE_T || fsm_12.state != STATE_T)
+    {
+        fsm_driver(&fsm_12);
+        fsm_driver(&fsm_21);
+    }
+
+    // 对于文件进入的状态要做保留，并且在出去的时候需要恢复
+    fcntl(fd1, F_SETFL, fd1_save);
+    fcntl(fd2, F_SETFL, fd2_save);
+}
+
+int main()
+{
+    int fd1, fd2;
+    fd1 = open(TTY1, O_RDWR);
+    if (fd1 < 0)
+    {
+        perror("open()");
+        exit(1);
+    }
+
+    fd2 = open(TTY2, O_RDWR | O_NONBLOCK);
+    if (fd2 < 0)
+    {
+        perror("open()");
+        exit(1);
+    }
+
+    relay(fd1, fd2);
+
+    close(fd1);
+    close(fd2);
+
+    exit(0);
+}
+```
+
+## 3、IO多路转接
+
+
+
+## 4、其他读写函数
+
+
+
+## 5、存储映射IO
+
+
+
+## 6、文件锁
+
+## 
 
 
 
