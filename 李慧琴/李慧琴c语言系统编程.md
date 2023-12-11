@@ -5979,6 +5979,370 @@ int main() {
 
 > 2、XSI -> SysV
 
+key值，确认让通信双方拿到同一个通信机制
+
+key值 -> ftok()
+
+`ftok` 是一个用于生成 System V IPC（Inter-Process Communication，进程间通信）键的函数，其原型如下：
+
+```c
+#include <sys/types.h>
+#include <sys/ipc.h>
+
+key_t ftok(const char *pathname, int proj_id);
+```
+
+- `pathname`：是一个指向字符串的指针，通常是一个存在的文件的路径名。`ftok` 使用这个路径名来生成一个键值。
+- `proj_id`：是一个用户定义的项目标识符，用于进一步区分 IPC 对象。在不同的项目中，`proj_id` 的值应该不同。
+
+函数返回一个键值（key_t 类型），该键值可以被用于创建或获取 System V IPC 对象，比如消息队列、信号量、共享内存等。
+
+请注意，使用 `ftok` 时需要注意以下几点：
+
+1. 要确保 `pathname` 参数对应的文件存在，否则可能会出现错误。
+2. 不同的文件路径和项目标识符组合可能生成相同的键值，因此在使用 `ftok` 生成键值时要小心避免冲突。
+3. `proj_id` 的范围应该在 [0, 255] 之间。
+
+> 消息队列（msg）、信号量数组(sem)、共享内存(shm)的相关函数适用下面的规则
+
+1. `创建：xxxget`
+2. `操作：xxxop`
+3. `控制：xxxctl`
+
+### ①消息队列（msg）
+
+msgget() 创建一个消息队列
+
+msgsnd() 发送消息
+
+msgrcv() 接收消息
+
+msgctl() 对某一个消息队列进行控制
+
+主动端：先发包的一方
+
+被动端：先收包的一方`（先运行）`
+
+`双方协议`
+
+```c
+//通信双方的协议文件
+/**
+ * ip地址、端口、组播、广播、对齐方式、机器字长、数据格式
+*/
+#ifndef __PROTO_H__
+#define __PROTO_H__
+
+#define   KEYPATH   "/etc/services"
+#define   KEYPROJ   'g'
+#define   NAMESIZE 32
+
+struct msg_st
+{
+    long mtype; //标识当前消息的类型
+    char name[NAMESIZE];
+    int math;
+    int chinese;
+};
+
+#endif
+```
+
+`接收方`
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/msg.h>
+#include <string.h>
+
+#include "proto.h"
+
+// 被动端
+
+int main()
+{
+    key_t key;
+    int msgid;
+    struct msg_st rbuf;
+
+    key = ftok(KEYPATH, KEYPROJ);
+    if (key <= 0)
+    {
+        perror("ftok()");
+        exit(1);
+    }
+
+    msgid = msgget(key, IPC_CREAT | 0600); // 消息队列使用的权限
+    if (msgid < 0)
+    {
+        perror("msgget()");
+        exit(1);
+    }
+
+    while (1)
+    {
+        if (msgrcv(msgid, &rbuf, sizeof(rbuf) - sizeof(long), 0, 0) < 0)
+        {
+            perror("msgrcv()");
+            exit(1);
+        }
+        printf("NAME = %s\n",rbuf.name);
+        printf("MATH = %d\n",rbuf.math);
+        printf("CHINESE = %d\n",rbuf.chinese);
+    }
+
+    //销毁消息队列
+    msgctl(msgid,IPC_RMID,NULL);
+
+    exit(0);
+}
+```
+
+`发送方`
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/msg.h>
+#include <string.h>
+
+#include "proto.h"
+
+// 主动端
+
+int main()
+{
+    key_t key;
+    int msgid;
+    struct msg_st sbuf;
+
+    key = ftok(KEYPATH, KEYPROJ);
+    if (key <= 0)
+    {
+        perror("ftok()");
+        exit(1);
+    }
+
+    msgid = msgget(key, 0); // 消息队列使用的权限
+    if (msgid < 0)
+    {
+        perror("msgget()");
+        exit(1);
+    }
+
+    sbuf.mtype = 1;
+    strcpy(sbuf.name,"Alan");
+    sbuf.math = 100;
+    sbuf.chinese = 100;
+
+    if (msgsnd(msgid, &sbuf, sizeof(sbuf) - sizeof(long), 0) < 0)
+    {
+        perror("msgsnd()");
+        exit(1);
+    }
+
+    puts("send!\n");
+
+    exit(0);
+}
+```
+
+消息队列具有一定的数据缓存的效果，可以通过获取key值来实现两个没有亲缘关系的进程间实现通信
+
+### ②信号量数组
+
+`示例：使用信号量数组实现进程间同步`
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/sem.h>
+#include <errno.h>
+
+#define PROCNUM 20
+#define FNAME "/tmp/out"
+#define LINESIZE 1024
+
+int semid;
+
+static void P(void)
+{
+
+    struct sembuf op;
+
+    op.sem_num = 0;
+    op.sem_op = -1;
+    op.sem_flg = 0;
+
+    while (semop(semid, &op, 1) < 0)
+    {
+        if (errno != EINTR || errno != EAGAIN)
+        {
+            perror("semop()");
+            exit(1);
+        }
+    }
+}
+
+static void V(void)
+{
+    struct sembuf op;
+
+    op.sem_num = 0;
+    op.sem_op = 1;
+    op.sem_flg = 0;
+
+    if (semop(semid, &op, 1) < 0)
+    {
+        perror("semop()");
+        exit(1);
+    }
+}
+
+static void func_add(void)
+{
+    FILE *fp;
+    int fd;
+    char linebuf[LINESIZE];
+
+    fp = fopen(FNAME, "r+");
+    if (fp == NULL)
+    {
+        perror("fopen()");
+        exit(1);
+    }
+
+    P(); // 取资源量
+    fgets(linebuf, LINESIZE, fp);
+    fseek(fp, 0, SEEK_SET);
+    sleep(1);
+    fprintf(fp, "%d\n", atoi(linebuf) + 1);
+    fflush(fp);
+    V(); // 还资源量
+
+    fclose(fp);
+
+    return;
+}
+
+int main()
+{
+    pid_t pid;
+    int i;
+
+    semid = semget(IPC_PRIVATE, 1, 0600);
+    if (semid < 0)
+    {
+        perror("semget()");
+        exit(1);
+    }
+
+    if (semctl(semid, 0, SETVAL, 1) < 0)
+    {
+        perror("semctl()");
+        exit(1);
+    }
+
+    for (i = 0; i < PROCNUM; i++)
+    {
+        pid = fork();
+        if (pid < 0)
+        {
+            perror("fork()");
+            exit(1);
+        }
+        else if (pid == 0)
+        {
+            func_add();
+            exit(0);
+        }
+    }
+
+    for (i = 0; i < PROCNUM; i++)
+        wait(NULL);
+
+    semctl(semid, 0, IPC_RMID);
+
+    exit(0);
+}
+```
+
+### ③共享内存
+
+实例：
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <unistd.h>
+#include <string.h>
+#include <sys/wait.h>
+
+#define MEMSIZE 1024
+
+int main()
+{
+    pid_t pid;
+    int shmid;
+    void *ptr;
+
+    //具有亲缘关系的进程之间是不需要key值的
+    shmid = shmget(IPC_PRIVATE, MEMSIZE, 0600);
+    if (shmid < 0)
+    {
+        perror("shmget()");
+        exit(1);
+    }
+
+    pid = fork();
+    if (pid < 0)
+    {
+        perror("fork()");
+        exit(1);
+    }
+    else if (pid == 0)
+    {
+        ptr = shmat(shmid, NULL, 0);
+        if (ptr == (void *)-1)
+        {
+            perror("shmat()");
+            exit(1);
+        }
+        strcpy(ptr, "hello");
+        shmdt(ptr);
+        exit(0);
+    }
+    else
+    {
+        wait(NULL);
+        ptr = shmat(shmid, NULL, 0);
+        if (ptr == (void *)-1)
+        {
+            perror("shmat()");
+            exit(1);
+        }
+        put(ptr);
+        shmdt(ptr);
+        shmctl(shmid,IPC_RMID,NULL);
+        exit(0);
+    }
+
+}
+
+```
+
 
 
 > 3、网络套接字socket
