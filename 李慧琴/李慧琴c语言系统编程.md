@@ -5196,7 +5196,7 @@ struct rel_stat_st
     int state;
     int fd1;
     int fd2;
-    __int64_t count21,count12;
+    int64_t count21,count12;
     
 };
 
@@ -5262,6 +5262,7 @@ struct rel_fsm_st
     __int64_t count;
 };
 
+//定义单个任务结构体
 struct rel_job_st
 {
     int fd1;
@@ -5272,14 +5273,13 @@ struct rel_job_st
     int fd2_save;
 };
 
-// 定义存储job的数组，临界资源
+// 定义存储job的数组，该数组是临界资源，每次需要改变其中的值时，必须上锁操作
 static struct rel_job_st *rel_job[REL_JOBMAX];
 static pthread_mutex_t mut_rel_job = PTHREAD_MUTEX_INITIALIZER;
 static pthread_once_t init_once = PTHREAD_ONCE_INIT;
 
 static void fsm_driver(struct rel_fsm_st *fsm)
 {
-
     int ret;
 
     switch (fsm->state)
@@ -5342,7 +5342,7 @@ static void fsm_driver(struct rel_fsm_st *fsm)
     }
 }
 
-static void *thr_relayer(void *p)
+static void *thr_relayer(void *p)	//该线程负责推动job数组内部的所有状态机
 {
     while (1)
     {
@@ -5353,7 +5353,6 @@ static void *thr_relayer(void *p)
             {
                 if (rel_job[i]->job_state == STATE_RUNNING)
                 {
-
                     fsm_driver(&rel_job[i]->fsm12);
                     fsm_driver(&rel_job[i]->fsm21);
                     if (rel_job[i]->fsm12.state == STATE_T && rel_job[i]->fsm21.state == STATE_T)
@@ -5398,7 +5397,7 @@ int rel_addjob(int fd1, int fd2)
 
     struct rel_job_st *me;
 
-    // 开始推动状态机，只有推一次
+    // 从一开始就推动状态机，只推一次
     pthread_once(&init_once, module_load);
 
     me = malloc(sizeof(*me));
