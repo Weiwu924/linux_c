@@ -5087,6 +5087,397 @@ int main()
 }
 ```
 
+> 中继引擎实现
+
+主要涉及到的文件为，main.c relayer.c relayer.h makefile
+
+main.c
+
+```c
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <unistd.h>
+#include "relayer.h"
+
+
+#define TTY1 "../dev/tty9"
+#define TTY2 "../dev/tty10"
+#define TTY3 "../dev/tty11"
+#define TTY4 "../dev/tty12"
+
+int main()
+{
+    int fd1, fd2, fd3, fd4;
+    int job1, job2;
+
+    fd1 = open(TTY1, O_RDWR);
+    if (fd1 < 0)
+    {
+        perror("open()");
+        exit(1);
+    }
+
+    fd2 = open(TTY2, O_RDWR | O_NONBLOCK);
+    if (fd2 < 0)
+    {
+        perror("open()");
+        exit(1);
+    }
+
+    job1 = rel_addjob(fd1, fd2);
+    if(job1 < 0)
+    {
+        fprintf(stderr,"rel_addjob ,err is %s\n",strerror(-job1));
+        exit(1);
+    }
+
+    fd3 = open(TTY3, O_RDWR);
+    if (fd3 < 0)
+    {
+        perror("open()");
+        exit(1);
+    }
+
+    fd4 = open(TTY2, O_RDWR | O_NONBLOCK);
+    if (fd4 < 0)
+    {
+        perror("open()");
+        exit(1);
+    }
+
+    job2 = rel_addjob(fd3, fd4);
+    if(job2 < 0)
+    {
+        fprintf(stderr,"rel_addjob ,err is %s\n",strerror(-job2));
+        exit(1);
+    }
+
+    while(1)
+        pause();
+
+    close(fd1);
+    close(fd2);
+    close(fd3);
+    close(fd4);
+
+    exit(0);
+}
+
+```
+
+relayer.h
+
+```c
+#ifndef __RELAYER_H__
+#define __RELAYER_H__
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <unistd.h>
+#include <string.h>
+
+#define BUFSIZE 1024
+#define REL_JOBMAX  10000
+
+enum
+{
+    STATE_RUNNING=1,
+    STATE_CANCEL,
+    STATE_OVER
+};
+
+struct rel_stat_st
+{
+    int state;
+    int fd1;
+    int fd2;
+    __int64_t count21,count12;
+    
+};
+
+//添加任务
+int rel_addjob(int fd1,int fd2);
+/**
+ * return >= 0  成功，返回当前任务id
+ *        == -EINVAL  失败，参数非法
+ *        == -ENOSPC  失败，任务数组满
+ *        == -ENOMEM  失败，内存分配有误
+*/
+
+//取消任务
+int rel_canceljob(int fd);
+/**
+ * return == 0  成功，指定任务成功取消
+ *        == -EINVAL  失败，参数非法
+ *        == -EBUSY  失败，任务已经被取消
+*/
+
+//给任务收尸
+int rel_waitjob(int fd,struct rel_stat_st *);
+/**
+ * return       == 0 成功，指定任务已经停止，并且返回状态
+ *              == -EINVAL  失败，参数非法
+*/
+
+//获取任务状态
+int rel_statjob(int fd,struct rel_stat_st *);
+/**
+ * return       == 0 成功，指定任务任务状态已经返回
+ *              == -EINVAL  失败，参数非法
+*/
+
+#endif
+```
+
+relayer.c
+
+```c
+#include "relayer.h"
+#include <pthread.h>
+
+// 定义状态机具有的各个状态
+enum
+{
+    STATE_R = 1,
+    STATE_W,
+    STATE_Ex,
+    STATE_T
+};
+
+// 定义状态机模型结构体
+struct rel_fsm_st
+{
+    int state;
+    int sfd;
+    int dfd;
+    int len;
+    int pos;
+    char *errstring;
+    char buf[BUFSIZE];
+    __int64_t count;
+};
+
+struct rel_job_st
+{
+    int fd1;
+    int fd2;
+    int job_state;
+    struct rel_fsm_st fsm12, fsm21;
+    int fd1_save;
+    int fd2_save;
+};
+
+// 定义存储job的数组，临界资源
+static struct rel_job_st *rel_job[REL_JOBMAX];
+static pthread_mutex_t mut_rel_job = PTHREAD_MUTEX_INITIALIZER;
+static pthread_once_t init_once = PTHREAD_ONCE_INIT;
+
+static void fsm_driver(struct rel_fsm_st *fsm)
+{
+
+    int ret;
+
+    switch (fsm->state)
+    {
+    case STATE_R:
+        fsm->len = read(fsm->sfd, fsm->buf, BUFSIZE);
+        if (fsm->len == 0)
+            fsm->state = STATE_T;
+        else if (fsm->len < 0)
+        {
+            if (errno == EAGAIN)
+                fsm->state = STATE_R;
+            else
+            {
+                fsm->errstring = "read()";
+                fsm->state = STATE_Ex;
+            }
+        }
+        else
+        {
+            fsm->pos = 0;
+            fsm->state = STATE_W;
+        }
+        break;
+    case STATE_W:
+        ret = write(fsm->dfd, fsm->buf + fsm->pos, fsm->len);
+        if (ret < 0)
+        {
+            if (errno == EAGAIN)
+                fsm->state = STATE_W;
+            else
+            {
+                fsm->errstring = "write()";
+                fsm->state = STATE_Ex;
+            }
+        }
+        else
+        {
+            fsm->pos += ret;
+            fsm->len -= ret;
+            if (fsm->len == 0)
+                fsm->state = STATE_R;
+            else
+                fsm->state = STATE_W;
+        }
+
+        break;
+    case STATE_Ex:
+        perror(fsm->errstring);
+        fsm->state = STATE_T;
+        break;
+    case STATE_T:
+        /* code */
+        // 进程结束
+        break;
+    default:
+        // 进程结束
+        abort();
+        break;
+    }
+}
+
+static void *thr_relayer(void *p)
+{
+    while (1)
+    {
+        pthread_mutex_lock(&mut_rel_job);
+        for (int i = 0; i < REL_JOBMAX; i++)
+        {
+            if (rel_job[i] != NULL)
+            {
+                if (rel_job[i]->job_state == STATE_RUNNING)
+                {
+
+                    fsm_driver(&rel_job[i]->fsm12);
+                    fsm_driver(&rel_job[i]->fsm21);
+                    if (rel_job[i]->fsm12.state == STATE_T && rel_job[i]->fsm21.state == STATE_T)
+                    {
+                        rel_job[i]->job_state = STATE_OVER;
+                    }
+                }
+            }
+        }
+        pthread_mutex_unlock(&mut_rel_job);
+    }
+}
+
+// 创建线程推状态机
+static void module_load(void)
+{
+    int err;
+    pthread_t tid_relayer;
+
+    err = pthread_create(&tid_relayer, NULL, thr_relayer, NULL);
+    if (err)
+    {
+        fprintf(stderr, "pthread_create():%s\n", strerror(err));
+        exit(1);
+    }
+}
+
+static int get_free_pos_unlocked()
+{
+    for(int i = 0; i < REL_JOBMAX; i++)
+    {
+        if(rel_job[i] == NULL)
+            return i;
+    }
+    return -1;
+}
+
+// 添加任务
+int rel_addjob(int fd1, int fd2)
+{
+    int pos;
+
+    struct rel_job_st *me;
+
+    // 开始推动状态机
+    pthread_once(&init_once, module_load);
+
+    me = malloc(sizeof(*me));
+    if (me == NULL)
+    {
+        return -ENOMEM;
+    }
+
+    me->fd1 = fd1;
+    me->fd2 = fd2;
+    me->job_state = STATE_RUNNING;
+
+    // 确保文件描述符都是非阻塞形式的
+    me->fd1_save = fcntl(me->fd1, F_GETFL);
+    fcntl(me->fd1, F_SETFL, me->fd1_save | O_NONBLOCK);
+    me->fd2_save = fcntl(me->fd2, F_GETFL);
+    fcntl(me->fd2, F_SETFL, me->fd2_save | O_NONBLOCK);
+
+    // 设置初始状态机状态
+    me->fsm12.sfd = me->fd1;
+    me->fsm12.dfd = me->fd2;
+    me->fsm12.state = STATE_R;
+
+    me->fsm21.sfd = me->fd2;
+    me->fsm21.dfd = me->fd1;
+    me->fsm21.state = STATE_R;
+
+    // 加锁获取当前数组中的空位
+    pthread_mutex_lock(&mut_rel_job);
+    pos = get_free_pos_unlocked();
+    if (pos < 0)
+    {
+        // 解锁
+        pthread_mutex_unlock(&mut_rel_job);
+        // 还原文件描述符初始状态
+        fcntl(me->fd1, F_SETFL, me->fd1_save);
+        fcntl(me->fd2, F_SETFL, me->fd2_save);
+        // 释放已经申请的空间
+        free(me);
+        return -ENOSPC;
+    }
+    rel_job[pos] = me;
+    pthread_mutex_unlock(&mut_rel_job);
+}
+
+#if 0
+//取消任务
+int rel_canceljob(int fd)
+
+//给任务收尸
+int rel_waitjob(int fd,struct rel_stat_st *)
+
+//获取任务状态
+int rel_statjob(int fd,struct rel_stat_st *)
+
+#endif
+```
+
+makefile
+
+```makefile
+target=relayer
+CC=gcc
+CFLAGS+=-c	-Wall	-pthread
+LFLAGS+=-pthread	-o
+OBJS=	main.c	relayer.c	
+
+$(target):$(OBJS)
+	$(CC)	$^	$(LFLAGS)	$@
+
+%.o:%.c
+	$(CC)	$^	$(CFLAGS)	$@
+
+clean:
+	rm	-rf	*.o	relayer
+```
+
+
+
 ## 3、IO多路转接
 
 
@@ -5101,7 +5492,7 @@ int main()
 
 ## 6、文件锁
 
-## 
+
 
 
 
