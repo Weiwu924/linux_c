@@ -5825,11 +5825,163 @@ int mypipe_destory(mypipe_t *ptr)
 }
 ```
 
+# 九、进程间通信
 
 
 
+> 1、管道
+
+内核提供，单工，自同步机制（管道永远迁就慢一点的一方）
+
+- [x] `匿名管道`（不能用于没有亲缘关系的进程间通信）
+
+pipe()  创建一个管道，在一个管道当中，写端和读端都是具有两个的，一端同时具有读写功能
+
+`示例1：父进程往管道中写，子进程从管道当中读`，那么父进程不需要读端，可以将读端关闭，子进程关闭写端
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+
+#define BUFSIZE 1024
+
+int main()
+{
+    int pd[2];
+    pid_t pid;
+    char buf[BUFSIZE];
+
+    if (pipe(pd) < 0)
+    {
+        perror("pipe()");
+        exit(1);
+    }
+
+    pid = fork();
+    if (pid < 0)    
+    {
+        perror("fork()");
+        exit(1);
+    }
+    else if (pid == 0)   //子进程
+    {
+        close(pd[1]);
+        int len = read(pd[0],&buf,BUFSIZE);
+        write(1,buf,len);
+        close(pd[0]);
+        exit(0);
+    }
+    else                //父进程
+    {
+        close(pd[0]);
+        write(pd[1],"Hello!",6);
+        close(pd[1]);
+        wait(NULL);
+        exit(0);
+    }
+
+}
+```
+
+`示例2：`和以上是相同功能
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <fcntl.h>
+
+#define BUFSIZE 1024
+
+int main()
+{
+    int pd[2];
+    pid_t pid;
+    char buf[BUFSIZE];
+
+    if (pipe(pd) < 0)
+    {
+        perror("pipe()");
+        exit(1);
+    }
+
+    pid = fork();
+    if (pid < 0)
+    {
+        perror("fork()");
+        exit(1);
+    }
+    else if (pid == 0) // 子进程
+    {
+        close(pd[1]);
+        dup2(pd[0], 0);
+        close(pd[0]);
+        int fd = open("/dev/null", O_RDWR);
+        dup2(fd, 1);                               // 关闭标准写
+        dup2(fd, 2);                               // 关闭标准报错
+        execl("/usr/mpg123", "mpg123", "-", NULL); // 当前子进程变成了mpg123
+        perror("execl()");
+        exit(1);
+    }
+    else // 父进程
+    {
+        close(pd[0]);
+        // 父进程从网上收取数据，往管道中写
+        close(pd[1]);
+        wait(NULL);
+        exit(0);
+    }
+}
+```
+
+- [x] `命名管道`
+
+mkfifo 是一个用于创建命名管道（FIFO）的函数，其原型定义通常在 `<sys/types.h>` 和 `<sys/stat.h>` 头文件中。以下是 `mkfifo` 函数的一般原型：
+
+```c
+#include <sys/types.h>
+#include <sys/stat.h>
+
+int mkfifo(const char *pathname, mode_t mode);
+```
+
+- `pathname`：包含要创建的FIFO的路径名。
+- `mode`：指定创建的FIFO的访问权限，通常以八进制表示（例如，`0666`）。
+
+`mkfifo` 函数返回 `0` 表示成功，返回 `-1` 表示失败，并设置相应的错误号，可以通过 `errno` 获取错误信息。
+
+以下是一个简单的示例程序，演示了如何使用 `mkfifo` 创建一个命名管道：
+
+```c
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
+
+int main() {
+    const char *fifoPath = "my_fifo";
+
+    // 创建FIFO，设置访问权限为0666
+    if (mkfifo(fifoPath, 0666) == -1) {
+        perror("mkfifo");
+        exit(EXIT_FAILURE);
+    }
+
+    printf("FIFO created successfully at %s\n", fifoPath);
+
+    return 0;
+}
+```
+
+> 2、XSI -> SysV
 
 
+
+> 3、网络套接字socket
 
 
 
