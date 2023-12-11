@@ -5398,7 +5398,7 @@ int rel_addjob(int fd1, int fd2)
 
     struct rel_job_st *me;
 
-    // 开始推动状态机
+    // 开始推动状态机，只有推一次
     pthread_once(&init_once, module_load);
 
     me = malloc(sizeof(*me));
