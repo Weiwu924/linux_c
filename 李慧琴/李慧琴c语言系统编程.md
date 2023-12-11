@@ -5476,27 +5476,354 @@ clean:
 	rm	-rf	*.o	relayer
 ```
 
-
-
 ## 3、IO多路转接
 
+监视文件描述符的行为，只有在发生程序感兴趣的文件操作的时候，才会去做后续的操作。发生了现象才去做对应的事情，解决盲等的问题。
 
+`select()`
 
-## 4、其他读写函数
+`poll()`
 
+`epoll()`
 
+以上三个函数实现io多路转接，实现监视文件描述符的行为。
 
-## 5、存储映射IO
+select()传参部位具有问题，poll()以文件描述符为单位来组织事件，epoll()是linux引申过来的，简化用户在poll上面的操作内容。
 
+必须掌握poll的使用
 
+三个函数的原型为：
 
-## 6、文件锁
+`select`
 
+```c
+#include <sys/select.h>
 
+int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, struct timeval *timeout);
+```
 
+- `nfds`: 所有文件描述符的范围（最大文件描述符 + 1）。
 
+- `readfds`: 用于检查是否有数据可读的文件描述符集合。
 
+- `writefds`: 用于检查是否可以写入的文件描述符集合。
 
+- `exceptfds`: 用于检查是否发生异常情况的文件描述符集合。
+
+- `timeout`: 是一个 `struct timeval` 结构，用于指定超时时间，即 `select()` 在等待可操作的文件描述符时最多等待的时间。
+
+  函数的返回值表示发生了程序感兴趣的行为的文件描述符的数量，如果发生错误则返回 -1
+
+该函数的使用：readfds，writefds，exceptfds中存储着用户感兴趣的文件描述符，当有文件描述符出现以上集合中的任意一个，select函数都会返回。
+
+> 示例程序：该程序演示了如何同时监视标准输入和标准输出是否准备好读取或写入：
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/select.h>
+
+int main() {
+    fd_set readfds, writefds;
+    struct timeval timeout;
+    int result;
+
+    while (1) {
+        // 清空文件描述符集合
+        FD_ZERO(&readfds);
+        FD_ZERO(&writefds);
+
+        // 将标准输入（0）添加到readfds集合
+        FD_SET(0, &readfds);
+
+        // 将标准输出（1）添加到writefds集合
+        FD_SET(1, &writefds);
+
+        // 设置超时时间为5秒
+        timeout.tv_sec = 5;
+        timeout.tv_usec = 0;
+
+        // 使用select函数检查文件描述符状态
+        result = select(2, &readfds, &writefds, NULL, &timeout);
+
+        if (result == -1) {
+            perror("select");
+            exit(EXIT_FAILURE);
+        } else if (result == 0) {
+            // 超时
+            printf("Timeout\n");
+        } else {
+            // 有文件描述符准备好
+            if (FD_ISSET(0, &readfds)) {
+                printf("Read from stdin is ready\n");
+                // 在这里可以读取标准输入的数据
+            }
+
+            if (FD_ISSET(1, &writefds)) {
+                printf("Write to stdout is ready\n");
+                // 在这里可以写入标准输出的数据
+            }
+        }
+    }
+
+    return 0;
+}
+
+```
+
+*select缺点：监视的事件太过单一，事件的存放位置和结果的存放位置是一致的。*
+
+`poll`
+
+函数原型：
+
+```c
+#include <poll.h>
+
+int poll(struct pollfd *fds, nfds_t nfds, int timeout);
+```
+
+- `fds`: 一个指向 `struct pollfd` 结构体数组的指针，每个结构体描述一个待监视的文件描述符。
+- `nfds`: 待监视的文件描述符数量。
+- `timeout`: 指定超时时间，单位是毫秒；如果设为负数，`poll()` 将一直等待，阻塞，如果为0，`poll()` 将立即返回，非阻塞。
+
+> 示例程序：该程序监视标准输入是否准备好读取：
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <poll.h>
+
+int main() {
+    struct pollfd fds[1];
+    int result;
+
+    // 设置要监视的文件描述符
+    fds[0].fd = 0;      // 标准输入
+    fds[0].events = POLLIN;  // 监视可读事件
+
+    while (1) {
+        // 使用poll函数检查文件描述符状态，阻塞形式
+        result = poll(fds, 1, -1);
+
+        if (result == -1) {
+            perror("poll");
+            exit(EXIT_FAILURE);
+        } else if (result == 0) {
+            // 永远不会发生，因为超时设置为-1（等待时间无限）
+        } else {
+            // 有文件描述符准备好
+            if (fds[0].revents & POLLIN) {
+                printf("Read from stdin is ready\n");
+                // 在这里可以读取标准输入的数据
+            }
+        }
+    }
+
+    return 0;
+}
+```
+
+它设置了一个 `struct pollfd` 数组，描述了要监视的文件描述符以及监视的事件类型。在循环中，`poll()` 函数会阻塞程序，直到有文件描述符准备好或超时。请注意，该示例程序中的超时设置为-1，表示一直等待，直到有事件发生。
+
+# 八、管道实例
+
+> 池类算法
+
+<img src="李慧琴c语言系统编程/image-20231211140627996.png" alt="image-20231211140627996" style="zoom: 50%;" />
+
+使用循环队列实现，引申到管道实现，但是这里是在同一个进程空间内，使用管道实现该功能有点小题大做，是使用循环队列实现比较合适。
+
+`mypipe.h`
+
+```c
+#ifndef __MYPIPE_H__
+#define __MYPIPE_H__
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+
+#define PIPESIZE        1024
+#define MYPIPE_READ     0x00000001UL
+#define MYPIPE_WRITE    0x00000002UL
+
+typedef void mypipe_t;
+
+struct mypipe_st
+{
+    int head;
+    int tail;
+    char data[PIPESIZE];
+    int datasize;
+    int count_rd;
+    int count_wr;
+    pthread_mutex_t mut;
+    pthread_cond_t cond;
+};
+
+//管道初始化
+mypipe_t* mypipe_init(void);
+
+//管道注册
+int mypipe_register(mypipe_t *, int opmap);
+
+//管道注销
+int mypipe_unregister(mypipe_t *, int opmap);
+
+//读取单个字节
+static int mypipe_readbyte_unlocked(struct mypipe_st*,char *);
+
+//读取管道
+int mypipe_read(mypipe_t*, void *buf, size_t size);
+
+//写入管道
+int mypipe_write(mypipe_t*,const void *buf, size_t size);
+
+//管道销毁
+int mypipe_destory(mypipe_t*);
+
+#endif
+```
+
+mypipe.c
+
+```c
+#include "mypipe.h"
+
+// 管道初始化
+mypipe_t *mypipe_init(void)
+{
+    struct mypipe_st *me;
+    me = malloc(sizeof(*me));
+    if (me == NULL)
+    {
+        return NULL;
+    }
+
+    me->head = 0;
+    me->tail = 0;
+    me->datasize = 0;
+    me->count_rd = 0;
+    me->count_wr = 0;
+    pthread_mutex_init(&me->mut, NULL);
+    pthread_cond_init(&me->cond, NULL);
+
+    return me;
+}
+
+int next(int p)
+{
+    if ((p + 1) != PIPESIZE)
+        return p + 1;
+    else
+        return 0;
+}
+
+// 管道注册
+int mypipe_register(mypipe_t *ptr, int opmap)
+{
+
+    struct mypipe_st *me = ptr;
+
+    pthread_mutex_lock(&me->mut);
+
+    if (opmap & MYPIPE_READ)
+        me->count_rd++;
+    if (opmap & MYPIPE_WRITE)
+        me->count_wr++;
+
+    pthread_cond_broadcast(&me->cond);
+
+    // 管道必须要具有读写双方才能工作
+    while (me->count_rd <= 0 || me->count_wr <= 0)
+        pthread_cond_wait(&me->cond, &me->mut);
+
+    pthread_mutex_unlock(&me->mut);
+
+    return 0;
+}
+
+// 管道注销
+int mypipe_unregister(mypipe_t *ptr, int opmap)
+{
+    struct mypipe_st *me = ptr;
+
+    pthread_mutex_lock(&me->mut);
+
+    if (opmap & MYPIPE_READ)
+        me->count_rd--;
+    if (opmap & MYPIPE_WRITE)
+        me->count_wr--;
+    
+    pthread_cond_broadcast(&me->cond);
+
+    pthread_mutex_unlock(&me->mut);
+
+    return 0;
+}
+
+// 读取单个字节
+static int mypipe_readbyte_unlocked(struct mypipe_st *me, char *datap)
+{
+    if (me->datasize <= 0)
+        return -1;
+    *datap = me->data[me->head];
+    me->head = next(me->head);
+    me->datasize--;
+    return 0;
+}
+
+// 读取管道
+int mypipe_read(mypipe_t *ptr, void *buf, size_t size)
+{
+    struct mypipe_st *me = ptr;
+    int i;
+
+    pthread_mutex_lock(&me->mut);
+
+    while (me->datasize <= 0 && me->count_wr > 0)
+    {
+        pthread_cond_wait(&me->cond, &me->mut);
+    }
+
+    if(me->datasize <= 0 && me->count_wr <= 0)
+    {
+        pthread_mutex_unlock(&me->mut);
+        return 0;
+    }    
+
+    for (i = 0; i < size; i++)
+    {
+        if (mypipe_readbyte_unlocked(me, buf + i) != 0)
+            break;
+    }
+
+    pthread_cond_broadcast(&me->cond);
+    pthread_mutex_unlock(&me->mut);
+
+    return i;
+}
+
+// 写入管道
+int mypipe_write(mypipe_t *, const void *buf, size_t size)
+{
+
+}
+
+// 管道销毁
+int mypipe_destory(mypipe_t *ptr)
+{
+    struct mypipe_st *me = ptr;
+
+    pthread_mutex_destroy(&me->mut);
+    pthread_cond_destroy(&me->cond);
+
+    free(ptr);
+
+    return 0;
+}
+```
 
 
 
