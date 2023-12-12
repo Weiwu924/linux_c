@@ -6342,11 +6342,126 @@ int main()
 
 ```
 
-
-
 > 3、网络套接字socket
 
+`讨论：跨主机的传输需要注意的问题`
 
+1. 字节序问题：
+
+   大端存储：低地址处放高字节
+
+   小端存储：低地址处放低字节
+
+   <img src="李慧琴c语言系统编程/image-20231212093543993.png" alt="image-20231212093543993" style="zoom:50%;" />
+
+   目前不再考虑大端还是小端，通过主机和字节间的关系进行处理
+
+   主机字节序：host
+
+   网络字节序：network
+
+   _to__:有以下几种组合形式：htons(主机到网络对端的两位信息)、htonl(主机到网络对端的四位信息)、ntohs(网络到主机对端的两位信息)、ntohl(网络到主机对端的四位信息)
+
+2. 对齐：
+
+   ```c
+   struct
+   {
+       int i;
+       char ch;
+       float f;
+   };
+   ```
+
+   由于编译器存在`对齐`的功能，以上结构体所占据的字节个数是12个字节，而不是9个字节。
+
+<img src="李慧琴c语言系统编程/image-20231212095317467.png" alt="image-20231212095317467" style="zoom:50%;" />
+
+在此处套接字通信的时候的解决方法是使用宏定义使得编译器不进行对齐
+
+3. 数据类型长度问题：
+
+   int、char、float。。。。等数据类型的大小属于未定义行为。
+
+   解决办法：使用通用的数据类型标识，比如int32_t,uint32_t,int64_t,int8_t,uint8_t
+
+> `SOCKET：统一管理通信以及协议族`
+
+```c
+#include <sys/types.h>
+#include <sys/socket.h>
+
+int socket(int domain, int type, int protocol);
+```
+
+- `domain` 参数指定了通信协议族，常见的有 `AF_INET`（IPv4）和 `AF_INET6`（IPv6）。
+- `type` 参数指定了套接字的类型，常见的有 `SOCK_STREAM`（流套接字，用于面向连接的TCP通信）和 `SOCK_DGRAM`（数据报套接字，用于无连接的UDP通信）等等。
+- `protocol` 参数指定了使用的具体协议，通常传递0以选择默认协议。
+
+简单实例：
+
+```c
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+
+int main() {
+    // 创建一个IPv4的TCP套接字
+    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+
+    if (sockfd == -1) {
+        perror("Socket creation failed");
+        return 1;
+    }
+
+    printf("Socket created successfully\n");
+
+    // 关闭套接字
+    close(sockfd);
+
+    return 0;
+}
+```
+
+这只是socket的创建过程，实际上你还需要进行一系列的操作，如绑定地址、监听连接、接受连接等，具体的操作取决于你的应用场景。
+
+
+
+> `报式套接字`：相比较于其他的套接字，他所包含的内容和使用是要丰富一些的
+
+`主动端：`
+
+1、取得socket
+
+2、给socket绑定地址（可以省略）
+
+3、发收消息
+
+4、关闭socket
+
+
+
+`被动端`：先运行
+
+1、取得socket
+
+2、给socket绑定地址
+
+3、收发消息
+
+4、关闭socket
+
+
+
+
+
+
+
+
+
+
+
+> `流式套接字`：
 
 
 
