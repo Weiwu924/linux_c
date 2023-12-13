@@ -6427,7 +6427,9 @@ int main() {
 
 
 
-> `报式套接字`：相比较于其他的套接字，他所包含的内容和使用是要丰富一些的
+## 1、报式套接字
+
+相比较于其他的套接字，他所包含的内容和使用是要丰富一些的
 
 `主动端：`
 
@@ -6958,12 +6960,188 @@ UDP现象之一：`丢报`，主要原因是`阻塞`，解决办法是`流控`�
 
 <img src="李慧琴c语言系统编程/image-20231213112352697.png" alt="image-20231213112352697" style="zoom:50%;" />
 
+data以及ack都需要添加编号，以免产生混淆。
+
 > 使用UDP的传输形式重构之前的数据传输程序ftp
 
 有限状态机构造
 
 <img src="李慧琴c语言系统编程/image-20231213113126080.png" alt="image-20231213113126080" style="zoom:50%;" />
 
+## 2、流式套接字
+
+> TCP传输协议分析
+
+开始发很多个data数据包，直到收到一个ack为止，每收到一个ack，就再次发出一个data包。将很多个包发出去，抢占沿途的路由资源，反正每个发出去的包都有自己对应的ack信号，所以只要根据反馈回来的ack包就可以确定哪个数据包丢失了，进行重传。
+
+<img src="李慧琴c语言系统编程/image-20231213152625064.png" alt="image-20231213152625064" style="zoom:50%;" />
+
+​	当上述发一个包接一个ack的过程进行没有错误产生的时候，后续改成接到一个ack就发送两个数据包，扩大发送包的数量。如果检测到丢包的话，就将发送包的数量减半，从丢的那个包开始重新传数据。
+
+​	但是在传输之前，传输两端需要进行编号的约定。（`三次握手`）
+
+<img src="李慧琴c语言系统编程/image-20231213155329674.png" alt="image-20231213155329674" style="zoom:80%;" />
+
+以上基于半连接池的方式，会受到半连接池洪水攻击，即通过大量发送第一次握手而不发送第三次握手，使得发送方的半连接池满，从而接收不到真正需要接收的握手请求。
+
+`为了解决这个问题，提出cookie`
+
+对端ip＋对端端口 + 我端ip + 我端端口 + 两者的通信协议 + sort信息（由内核产生，一秒改变一次），再做hash操作，得到一个内容，称作`cookie`，当第一次握手后，发送方将cookie的内容和ack信息一同发出，当第三次握手的时候，接收方应该带上cookie来，经过验证之后，方才建立连接。
+
+<img src="李慧琴c语言系统编程/image-20231213161418964.png" alt="image-20231213161418964" style="zoom: 80%;" />
+
+> `流式套接字详解`
+
+C端（主动端）接收方
+
+1、获取SOCKET
+
+2、给SOCKET取得地址（可以省略）
+
+3、发送连接
+
+4、收发消息
+
+5、关闭
+
+
+
+S端
+
+1、获取SOCKET
+
+2、给SOCKET取得地址
+
+3、将SOCKET置为监听模式
+
+4、接收连接
+
+5、收发消息
+
+6、关闭
+
+> 实例程序
+
+协议
+
+proto.h
+
+```c
+#ifndef __PROTO_H__
+#define __PROTO_H__
+
+#include <sys/types.h>
+#include <sys/socket.h>   // 基本socket函数和数据结构
+#include <netinet/in.h>   // Internet地址族相关定义
+#include <arpa/inet.h>    // 处理IP地址的函数
+#include <unistd.h>       // UNIX系统调用
+
+#define SERVERPORT      "1989"
+#define FMT_STAMP       "%lld\r\n"
+
+
+#endif
+```
+
+S端	server.c
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+
+#include "proto.h"
+
+#define IPSTRSIZE 40
+#define BUFSIZE 1024
+
+static void server_job(int sd)
+{
+    char buf[BUFSIZE];
+
+    int len = sprintf(buf, FMT_STAMP, (long long)time(NULL));
+
+    if (send(sd, buf, len, 0) < 0)
+    {
+        perror("send()");
+        exit(1);
+    }
+}
+
+int main()
+{
+    int sockfd;
+    int newsockfd;
+    struct sockaddr_in laddr, raddr;
+    char ipstr[IPSTRSIZE];
+
+    // 获取socket
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0)
+    {
+        perror("socket()");
+        exit(1);
+    }
+
+    // 设置socket属性
+    int val = 1;
+    if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, val, sizeof(val)) < 0)  //SO_REUSEADDR可以使得闲置的地址立马可以被使用
+    {
+        perror("setsockopt()");
+        exit(1);
+    }
+
+    laddr.sin_family = AF_INET;
+    laddr.sin_port = htons(atoi(SERVERPORT));
+    inet_pton(AF_INET, "0.0.0.0", &laddr.sin_addr.s_addr);
+
+    // 取得地址
+    if (bind(sockfd, (void *)&laddr, sizeof(laddr)) < 0)
+    {
+        perror("bind()");
+        exit(1);
+    }
+
+    // 监听
+    if (listen(sockfd, 200) < 0)
+    {
+        perror("listen()");
+        exit(1);
+    }
+
+    // 接收连接
+    socklen_t raddr_len = sizeof(raddr);
+
+    while (1)
+    {
+        newsockfd = accept(sockfd, (void *)&raddr, &raddr_len);
+        if (newsockfd < 0)
+        {
+            perror("accept()");
+            exit(1);
+        }
+
+        inet_ntop(AF_INET, &raddr.sin_addr.s_addr, ipstr, IPSTRSIZE);
+        printf("CLIENT:%s:%d\n", ipstr, ntohs(raddr.sin_port));
+
+        // 收发消息
+        server_job(newsockfd);
+
+        close(newsockfd);
+    }
+
+    // 关闭
+    close(sockfd);
+
+    exit(0);
+}
+```
+
+C端	client.c
+
+```c
+
+```
 
 
 
@@ -6974,23 +7152,6 @@ UDP现象之一：`丢报`，主要原因是`阻塞`，解决办法是`流控`�
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-> `流式套接字`：
 
 
 
