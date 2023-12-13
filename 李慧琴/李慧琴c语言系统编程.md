@@ -7140,12 +7140,176 @@ int main()
 C端	client.c
 
 ```c
+#include "proto.h"
 
+int main(int argc, char *argv[])
+{
+
+    FILE *fp;
+    long long stamp;
+
+    if (argc < 2)
+    {
+        fprintf(stderr, "Usage....\n");
+        exit(1);
+    }
+
+    int sd;
+    struct sockaddr_in laddr;
+
+    //获取socket
+    sd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sd < 0)
+    {
+        perror("socket()");
+        exit(1);
+    }
+
+    //连接
+    laddr.sin_family = AF_INET;
+    laddr.sin_port = htons(atoi(SERVERPORT));
+    inet_pton(AF_INET, argv[1], &laddr.sin_addr.s_addr);
+
+    if (connect(sd, (void *)&laddr, sizeof(laddr)) < 0)
+    {
+        perror("connect()");
+        exit(1);
+    }
+
+    fp = fdopen(sd, "r+");
+    if (fp == NULL)
+    {
+        perror("fdopen()");
+        exit(1);
+    }
+
+    if(fscanf(fp, FMT_STAMP, &stamp) < 1)
+    {
+        fprintf(stderr,"Bad format\n");
+    }else
+    {
+        fprintf(stdout,"stamp = %lld\n",stamp);
+    }
+
+    fclose(fp);
+    
+    //或者直接
+	//recv()
+    //close()
+    
+    exit(0);
+}
 ```
 
+`将以上的程序修改成并发的版本`
 
+主要修改server端
 
+server.c
 
+```c
+#include <time.h>
+
+#include "proto.h"
+
+#define IPSTRSIZE 40
+#define BUFSIZE 1024
+
+static void server_job(int sd)
+{
+    char buf[BUFSIZE];
+
+    int len = sprintf(buf, FMT_STAMP, (long long)time(NULL));
+
+    if (send(sd, buf, len, 0) < 0)
+    {
+        perror("send()");
+        exit(1);
+    }
+}
+
+int main()
+{
+    int sockfd;
+    int newsockfd;
+    struct sockaddr_in laddr, raddr;
+    char ipstr[IPSTRSIZE];
+
+    pid_t pid;
+
+    // 获取socket
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0)
+    {
+        perror("socket()");
+        exit(1);
+    }
+
+    // 设置socket属性
+    int val = 1;
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, val, sizeof(val)) < 0)
+    {
+        perror("setsockopt()");
+        exit(1);
+    }
+
+    laddr.sin_family = AF_INET;
+    laddr.sin_port = htons(atoi(SERVERPORT));
+    inet_pton(AF_INET, "0.0.0.0", &laddr.sin_addr.s_addr);
+
+    // 取得地址
+    if (bind(sockfd, (void *)&laddr, sizeof(laddr)) < 0)
+    {
+        perror("bind()");
+        exit(1);
+    }
+
+    // 监听
+    if (listen(sockfd, 200) < 0)
+    {
+        perror("listen()");
+        exit(1);
+    }
+
+    // 接收连接
+    socklen_t raddr_len = sizeof(raddr);
+
+    while (1)
+    {
+        newsockfd = accept(sockfd, (void *)&raddr, &raddr_len);
+        if (newsockfd < 0)
+        {
+            perror("accept()");
+            exit(1);
+        }
+
+        pid = fork();
+        if (pid < 0)
+        {
+            perror("fork()");
+            exit(1);
+        }
+
+        if (pid == 0)
+        {
+            close(sockfd);
+            inet_ntop(AF_INET, &raddr.sin_addr.s_addr, ipstr, IPSTRSIZE);
+            printf("CLIENT:%s:%d\n", ipstr, ntohs(raddr.sin_port));
+            // 收发消息
+            server_job(newsockfd);
+
+            close(newsockfd);
+            
+            exit(0);
+        }
+        close(newsockfd);
+    }
+    // 关闭
+    close(sockfd);
+
+    exit(0);
+}
+```
 
 
 
