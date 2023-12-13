@@ -6616,6 +6616,375 @@ int main(int argc,char *argv[])
 
 <img src="李慧琴c语言系统编程/image-20231212151856265.png" alt="image-20231212151856265" style="zoom: 67%;" />
 
+
+
+> `多点通讯`：广播（全网广播，子网广播）、多播/组播
+
+setsockopt()
+
+getsockopt()
+
+> 广播示例：
+
+snder.c
+
+```c
+#include "proto.h"
+
+int main(int argc,char *argv[])
+{
+
+    if(argc < 2)
+    {
+        fprintf(stderr,"Usage.......\n");
+        exit(1);
+    }
+
+    if(strlen(argv[1]) > NAMEMAX)
+    {
+        fprintf(stderr,"名字太长\n");
+        exit(1);
+    }
+
+    int sndfd;
+    struct msg_st *sndbufp;
+    struct sockaddr_in raddr;
+
+    sndfd = socket(AF_INET,SOCK_DGRAM,0);
+    if(sndfd < 0)
+    {
+        perror("socket()");
+        exit(1);
+    }
+
+    int val = 1;
+
+    if(setsockopt(sndfd,SOL_SOCKET,SO_BROADCAST,&val,sizeof(val)) < 0)
+    {
+        perror("setsockopt()");
+        exit(1);
+    }
+
+    int size = sizeof(struct msg_st) + strlen(argv[2]);
+    sndbufp = malloc(size);
+    if(sndbufp < 0)
+    {
+        perror("malloc()");
+        exit(1);
+    }
+
+    //bind()省去
+    strcpy(sndbufp->name, argv[1]);
+    sndbufp->chinese = htonl(100);
+    sndbufp->math = htonl(100);
+
+    raddr.sin_family = AF_INET;
+    raddr.sin_port = htons(atoi(RCVPORT));
+    inet_pton(AF_INET,"255.255.255.255",&raddr.sin_addr.s_addr);
+
+    if(sendto(sndfd,sndbufp,size,0,(void *)&raddr,sizeof(raddr))<0)
+    {
+        perror("sendto()");
+        exit(1);
+    }
+
+    puts("OK!");
+
+    close(sndfd);
+
+    exit(1);
+}
+
+```
+
+rcver.c
+
+```c
+#include "proto.h"
+
+int main()
+{
+
+    int sockfd;
+    struct msg_st *rcvbufp;
+    struct sockaddr_in laddr, raddr;
+    socklen_t raddr_len;
+    char ipstr[IPSTRSIZE];
+
+    int size = sizeof(struct msg_st) + NAMEMAX - 1;
+    rcvbufp = malloc(sizeof(size));
+
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0)
+    {
+        perror("socket()");
+        exit(1);
+    }
+
+    int val = 1;
+    if(setsockopt(sockfd,SOL_SOCKET,SO_BROADCAST,&val,sizeof(val)))
+    {
+        perror("setsockopt()");
+        exit(1);
+    }
+
+    laddr.sin_family = AF_INET;
+    laddr.sin_port = htons(atoi(RCVPORT));
+    //将点分式表示的地址转换成二进制表示的ip地址
+    inet_pton(AF_INET, "0.0.0.0", &laddr.sin_addr); //"0.0.0.0"表示能够匹配任何地址
+
+    if (bind(sockfd, (void *)&laddr, sizeof(laddr)) < 0)
+    {
+        perror("bind()");
+        exit(1);
+    }
+
+    /**
+     * 对raddr_len初始化
+    */
+   raddr_len = sizeof(raddr);
+
+    while (1)
+    {
+        recvfrom(sockfd,rcvbufp,size,0,(void*)&raddr,&raddr_len);
+        //将二进制表示的地址转换成点分式表示的ip地址
+        inet_ntop(AF_INET,&raddr.sin_addr,ipstr,IPSTRSIZE);
+        printf("---MESSAGE FROM %s:%d---\n",ipstr,ntohs(raddr.sin_port));
+        printf("NAME = %s\n",rcvbufp->name);
+        //因为考虑到大端小端存储，所以以下两项需要进行转换，网络到主机
+        printf("MATH = %d\n",ntohl(rcvbufp->math));
+        printf("CHINESE = %d\n",ntohl(rcvbufp->chinese));
+    }
+
+    close(sockfd);
+
+    exit(0);
+}
+```
+
+> 多播实例:
+
+proto.h
+
+```c
+#ifndef __PROTO_H__
+#define __PROTO_H__
+
+#define NAMEMAX  (512 - 8 - 8)   //512是udp传输推荐的报长度，8是udp报头长度，8是math和chinese的长度
+#define RCVPORT  "1989"
+#define MGROUP  "224.2.2.2"
+#define IPSTRSIZE 10
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <stdint.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <string.h>
+
+struct msg_st
+{
+    uint32_t math;   //四字节
+    uint32_t chinese;   //四字节
+    uint8_t name[1];
+}__attribute__((packed));  //不对齐
+
+#endif
+
+```
+
+snder.c
+
+```c
+#include "proto.h"
+
+int main(int argc, char *argv[])
+{
+
+    if (argc < 2)
+    {
+        fprintf(stderr, "Usage.......\n");
+        exit(1);
+    }
+
+    if (strlen(argv[1]) > NAMEMAX)
+    {
+        fprintf(stderr, "名字太长\n");
+        exit(1);
+    }
+
+    int sndfd;
+    struct msg_st *sndbufp;
+    struct sockaddr_in raddr;
+
+    sndfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sndfd < 0)
+    {
+        perror("socket()");
+        exit(1);
+    }
+
+    struct ip_mreqn mreq;
+
+    inet_pton(AF_INET, MGROUP, &mreq.imr_multiaddr);
+    inet_pton(AF_INET, "0.0.0.0", &mreq.imr_address);
+    mreq.imr_ifindex = if_nametoindex("eth0");
+
+    // 创建多播组
+    if (setsockopt(sndfd, IPPROTO_IP, IP_MULTICAST_IF, &mreq, sizeof(mreq)) < 0)
+    {
+        perror("setsockopt()");
+        exit(1);
+    }
+
+    int size = sizeof(struct msg_st) + strlen(argv[2]);
+    sndbufp = malloc(size);
+    if (sndbufp < 0)
+    {
+        perror("malloc()");
+        exit(1);
+    }
+
+    // bind()省去
+    strcpy(sndbufp->name, argv[1]);
+    sndbufp->chinese = htonl(100);
+    sndbufp->math = htonl(100);
+
+    raddr.sin_family = AF_INET;
+    raddr.sin_port = htons(atoi(RCVPORT));
+    inet_pton(AF_INET, MGROUP, &raddr.sin_addr.s_addr);
+
+    if (sendto(sndfd, sndbufp, size, 0, (void *)&raddr, sizeof(raddr)) < 0)
+    {
+        perror("sendto()");
+        exit(1);
+    }
+
+    puts("OK!");
+
+    close(sndfd);
+
+    exit(1);
+}
+
+```
+
+rcver.c
+
+```c
+#include "proto.h"
+
+int main()
+{
+
+    int sockfd;
+    struct msg_st *rcvbufp;
+    struct sockaddr_in laddr, raddr;
+    socklen_t raddr_len;
+    char ipstr[IPSTRSIZE];
+
+    int size = sizeof(struct msg_st) + NAMEMAX - 1;
+    rcvbufp = malloc(sizeof(size));
+
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0)
+    {
+        perror("socket()");
+        exit(1);
+    }
+
+    struct ip_mreqn mreq;
+    inet_pton(AF_INET, MGROUP, &mreq.imr_multiaddr); //多播组地址
+    inet_pton(AF_INET, "0.0.0.0", &mreq.imr_address);
+    mreq.imr_ifindex = if_nametoindex("eth0");
+
+   //加入多播组
+    if(setsockopt(sockfd,IPPROTO_IP,IP_ADD_MEMBERSHIP,&mreq,sizeof(mreq)) < 0)
+    {
+        perror("setsockopt()");
+        exit(1);
+    }
+
+    laddr.sin_family = AF_INET;
+    laddr.sin_port = htons(atoi(RCVPORT));
+    //将点分式表示的地址转换成二进制表示的ip地址
+    inet_pton(AF_INET, "0.0.0.0", &laddr.sin_addr); //"0.0.0.0"表示能够匹配任何地址
+
+    if (bind(sockfd, (void *)&laddr, sizeof(laddr)) < 0)
+    {
+        perror("bind()");
+        exit(1);
+    }
+
+    /**
+     * 对raddr_len初始化
+    */
+   raddr_len = sizeof(raddr);
+
+    while (1)
+    {
+        recvfrom(sockfd,rcvbufp,size,0,(void*)&raddr,&raddr_len);
+        //将二进制表示的地址转换成点分式表示的ip地址
+        inet_ntop(AF_INET,&raddr.sin_addr,ipstr,IPSTRSIZE);
+        printf("---MESSAGE FROM %s:%d---\n",ipstr,ntohs(raddr.sin_port));
+        printf("NAME = %s\n",rcvbufp->name);
+        //因为考虑到大端小端存储，所以以下两项需要进行转换，网络到主机
+        printf("MATH = %d\n",ntohl(rcvbufp->math));
+        printf("CHINESE = %d\n",ntohl(rcvbufp->chinese));
+    }
+
+    close(sockfd);
+
+    exit(0);
+}
+
+```
+
+
+
+> UDP传输分析
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 > `流式套接字`：
 
 
